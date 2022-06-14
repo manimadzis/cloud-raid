@@ -16,30 +16,54 @@ class Uploader:
     async def upload(self, file: File, overwrite=False) -> UploadStatus:
         return await upload(self._disk.token, file.filename, file.data, self._session, overwrite=overwrite)
 
-    async def upload_by_blocks(self, file: File, overwrite=False, block_size=10 * 2 ** 20):
-        queue = asyncio.Queue(maxsize=10)
+    @staticmethod
+    async def _worker(name: str, queue: asyncio.Queue):
+        while True:
+            task = await queue.get()
+            status = await task
+            print(name, status)
+            queue.task_done()
+
+    async def upload_by_blocks(self, file: File, block_size=10 * 2 ** 20, workers=10, queue_size=10):
+        """
+        Split file into blocks of size block_size and upload them to cloud
+
+        :param file: need filename only
+        :param block_size: block size in bytes
+        :param workers: number of workers
+        :param queue_size: max pool size (block_size * queue_size bytes of RAM needed)
+        :return:
+        """
+
+        queue = asyncio.Queue(maxsize=queue_size)
         with open(file.filename, 'rb') as f:
-            block = f.read(block_size)
-            block_file = File(str(uuid4()), block)
-            is_added = False
+            done = False
+            while not done:
 
-            while block:
-                if not queue.full():
-                    queue.put_nowait(self.upload(block_file, overwrite=overwrite))
-                    is_added = True
-                else:
-                    while not queue.empty():
-                        await queue.get_nowait()
-                        print(f"add {block[:10]}")
-                        queue.task_done()
+                block = f.read(block_size)
+                block_file = File(str(uuid4()), block)
 
-                # if not queue.empty():
-                #     await queue.join()
-
-                if is_added:
+                while not queue.full() and block:
+                    queue.put_nowait(self.upload(block_file, overwrite=False))
                     block = f.read(block_size)
                     block_file = File(str(uuid4()), block)
-                    is_added = False
+
+                if not block:
+                    done = True
+
+                task_pool = []
+                for i in range(workers):
+                    task_pool.append(asyncio.create_task(self._worker(f"worker-{i}", queue)))
+
+                await queue.join()
+
+                for i in range(workers):
+                    task_pool[i].cancel()
+
+                await asyncio.gather(*task_pool, return_exceptions=True)
+
+    async def __aenter__(self):
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._session.close()
@@ -48,11 +72,3 @@ class Uploader:
         await self._session.close()
 
 
-async def main():
-    uploader = Uploader(Disk('AQAAAABd-AuhAADLW8ndhqgT-k6qu5pkxYCYJ54'))
-    await uploader.upload_by_blocks(File("[КГ] [У] Роджерс Д. - Алгоритмические основы машинной графики(1).djvu"), block_size=1024)
-    await uploader.close()
-
-
-if __name__ == '__main__':
-    asyncio.run(main())
