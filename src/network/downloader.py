@@ -1,7 +1,6 @@
 import aiohttp
 
-from disk import Disk
-from file import File
+from src.entities import Disk, File
 from yandex_disk.dowload import DownloadStatus, download
 
 

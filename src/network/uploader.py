@@ -3,8 +3,7 @@ from uuid import uuid4
 
 import aiohttp
 
-from disk import Disk
-from file import File
+from src.entities import Disk, File
 from yandex_disk.upload import upload, UploadStatus
 
 
@@ -70,5 +69,3 @@ class Uploader:
 
     async def close(self):
         await self._session.close()
-
-
