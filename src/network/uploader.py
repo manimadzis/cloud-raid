@@ -1,7 +1,8 @@
 import asyncio
-from typing import Iterator
+from typing import Iterator, List, Tuple
 
 import aiohttp
+
 from entities import File, Block
 from network.balancer import Balancer
 from network.yandex_disk.upload import upload, UploadStatus
@@ -14,13 +15,13 @@ class Uploader:
         self._blocks_repo = blocks_repo
         self._session = aiohttp.ClientSession()
 
-    async def _upload_block(self, block: Block) -> UploadStatus:
+    async def _upload_block(self, block: Block) -> Tuple[UploadStatus,Block]:
         status = await upload(block.disk.token, block.name, block.data, self._session)
         if status != UploadStatus.OK:
             print(f"Bad {status}: ", block)
         else:
             print("Ok:", block)
-        return status
+        return status, block
 
     @staticmethod
     def _block_generator(file: File, duplicate_count=1) -> Iterator[Block]:
@@ -33,23 +34,33 @@ class Uploader:
                 data = f.read(file.block_size)
                 number += 1
 
-    async def upload_file(self, file: File, worker_count=10, duplication_count=1) -> UploadStatus:
-        tasks = set()
+    async def upload_file(self, file: File,
+                          worker_count: int = 10,
+                          duplication_count: int = 1,
+                          timeout: float = None) -> UploadStatus:
+        tasks: List[asyncio.Task] = []
         block_generator = self._block_generator(file, duplication_count)
         first = True
+
         while len(tasks) != 0 or first:
             first = False
             try:
                 for _ in range(worker_count - len(tasks)):
                     block = next(block_generator)
                     self._balancer.fill_block(block)
-                    tasks |= {self._upload_block(block)}
+                    tasks.append(asyncio.create_task(self._upload_block(block)))
             except StopIteration:
                 pass
-            done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+            done, pending = await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            tasks = list(pending)
+            done_task = list(done)[0]
+            status, block = done_task.result()
+            if status != UploadStatus.OK:
+                tasks.append(asyncio.create_task(self._upload_block(block)))
+            await self._blocks_repo.add_block(block)
+        await self._blocks_repo.commit()
         return UploadStatus.OK
-
-
 
     async def __aenter__(self) -> "Uploader":
         return self

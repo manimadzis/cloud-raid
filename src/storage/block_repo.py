@@ -1,8 +1,9 @@
 from typing import Tuple, Generator
 
 import aiosqlite
-from entities import Block, Disk, File
 from loguru import logger
+
+from entities import Block, Disk, File
 from storage.abstract_repo import AbstractRepo
 
 
@@ -26,7 +27,7 @@ class BlockRepo(AbstractRepo):
 
     async def add_block(self, block: Block) -> None:
         await self.add_row('blocks', {
-            'disk_id': block.disk_id,
+            'disk_id': block.disk.id_,
             'filename': block.filename,
             'name': block.name,
             'number': block.number,
@@ -38,15 +39,15 @@ class BlockRepo(AbstractRepo):
         })
 
     async def get_disks(self) -> Tuple[Disk]:
-        cur = await self.execute('SELECT token FROM disks;')
+        cur = await self.execute('SELECT id, token FROM disks;')
 
         disks = []
         async for row in cur:
-            disks.append(Disk(token=row['token']))
+            disks.append(Disk(id_=row['id'], token=row['token']))
         return tuple(disks)
 
     async def get_token(self, disk_id: int) -> str:
-        cur = await  self.execute('SELECT token FROM disks WHERE id = ?', disk_id)
+        cur = await self.execute('SELECT token FROM disks WHERE id = ?', (disk_id,))
         try:
             token = cur.fetchone()
         except aiosqlite.Error as e:
@@ -61,12 +62,13 @@ class BlockRepo(AbstractRepo):
                                  'ORDER BY number', (file.path,))
         blocks = []
         async for row in cur:
+            token = await self.get_token(row['disk_id'])
+            disk = Disk(id_=row['disk_id'], token=token)
             blocks.append(Block(filename=row['filename'],
                                 number=row['number'],
-                                disk_id=row['disk_id'],
+                                disk=disk,
                                 name=row['name']))
         return tuple(blocks)
-
 
 # if __name__ == '__main__':
 #     repo = BlocksRepo('tmp.sqlite')

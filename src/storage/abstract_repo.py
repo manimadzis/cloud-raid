@@ -33,8 +33,8 @@ class AbstractRepo(ABC):
         """
         clause = "INSERT OR REPLACE INTO" if replace else "INSERT INTO"
         keys = ','.join(row_data.keys())
-        values = ','.join([str(row_data[x]) for x in row_data])
-        sql = f"{clause} {table}({keys}) VALUES ({values.__repr__()})"
+        values = ','.join([repr(row_data[x]) for x in row_data])
+        sql = f"{clause} {table}({keys}) VALUES ({values})"
 
         await self.execute(sql)
 

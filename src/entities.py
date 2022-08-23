@@ -5,8 +5,8 @@ from typing import Union
 
 @dataclass(order=True)
 class Disk:
-    token: str = field(compare=False, repr=False)
     id_: int
+    token: str = field(compare=False, repr=False)
     used_space: int = field(default=0, repr=False)
     total_space: int = field(default=0, repr=False)
 

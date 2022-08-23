@@ -22,9 +22,9 @@ class Balancer:
         :param count: count of disks
         :return:
         """
+
         if count > len(self._queue):
             count = len(self._queue)
-
         disks = [heapq.heappop(self._queue) for _ in range(count)]
         for disk in disks:
             heapq.heappush(self._queue, disk)
