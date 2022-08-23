@@ -1,71 +1,62 @@
 import asyncio
-from uuid import uuid4
+from typing import Iterator
 
 import aiohttp
-
-from src.entities import Disk, File
-from yandex_disk.upload import upload, UploadStatus
+from entities import File, Block
+from network.balancer import Balancer
+from network.yandex_disk.upload import upload, UploadStatus
+from storage.block_repo import BlockRepo
 
 
 class Uploader:
-    def __init__(self, disk: Disk):
-        self._disk = disk
+    def __init__(self, balancer: Balancer, blocks_repo: BlockRepo):
+        self._balancer = balancer
+        self._blocks_repo = blocks_repo
         self._session = aiohttp.ClientSession()
 
-    async def upload(self, file: File, overwrite=False) -> UploadStatus:
-        return await upload(self._disk.token, file.filename, file.data, self._session, overwrite=overwrite)
+    async def _upload_block(self, block: Block) -> UploadStatus:
+        status = await upload(block.disk.token, block.name, block.data, self._session)
+        if status != UploadStatus.OK:
+            print(f"Bad {status}: ", block)
+        else:
+            print("Ok:", block)
+        return status
 
     @staticmethod
-    async def _worker(name: str, queue: asyncio.Queue):
-        while True:
-            task = await queue.get()
-            status = await task
-            print(name, status)
-            queue.task_done()
+    def _block_generator(file: File, duplicate_count=1) -> Iterator[Block]:
+        with open(file.path, "rb") as f:
+            data = f.read(file.block_size)
+            number = 0
+            while data:
+                for _ in range(duplicate_count):
+                    yield Block(filename=file.path, number=number, data=data)
+                data = f.read(file.block_size)
+                number += 1
 
-    async def upload_by_blocks(self, file: File, block_size=10 * 2 ** 20, workers=10, queue_size=10):
-        """
-        Split file into blocks of size block_size and upload them to cloud
+    async def upload_file(self, file: File, worker_count=10, duplication_count=1) -> UploadStatus:
+        tasks = set()
+        block_generator = self._block_generator(file, duplication_count)
+        first = True
+        while len(tasks) != 0 or first:
+            first = False
+            try:
+                for _ in range(worker_count - len(tasks)):
+                    block = next(block_generator)
+                    self._balancer.fill_block(block)
+                    tasks |= {self._upload_block(block)}
+            except StopIteration:
+                pass
+            done, tasks = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        return UploadStatus.OK
 
-        :param file: need filename only
-        :param block_size: block size in bytes
-        :param workers: number of workers
-        :param queue_size: max pool size (block_size * queue_size bytes of RAM needed)
-        :return:
-        """
 
-        queue = asyncio.Queue(maxsize=queue_size)
-        with open(file.filename, 'rb') as f:
-            done = False
-            while not done:
 
-                block = f.read(block_size)
-                block_file = File(str(uuid4()), block)
-
-                while not queue.full() and block:
-                    queue.put_nowait(self.upload(block_file, overwrite=False))
-                    block = f.read(block_size)
-                    block_file = File(str(uuid4()), block)
-
-                if not block:
-                    done = True
-
-                task_pool = []
-                for i in range(workers):
-                    task_pool.append(asyncio.create_task(self._worker(f"worker-{i}", queue)))
-
-                await queue.join()
-
-                for i in range(workers):
-                    task_pool[i].cancel()
-
-                await asyncio.gather(*task_pool, return_exceptions=True)
-
-    async def __aenter__(self):
+    async def __aenter__(self) -> "Uploader":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, *args):
         await self._session.close()
 
-    async def close(self):
-        await self._session.close()
+
+if __name__ == '__main__':
+    u = Uploader()

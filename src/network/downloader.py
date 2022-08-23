@@ -10,7 +10,7 @@ class Downloader:
         self._session = aiohttp.ClientSession()
 
     async def download(self, file: File) -> DownloadStatus:
-        status, data = await download(self._disk.token, file.filename, self._session)
+        status, data = await download(self._disk.token, file.path, self._session)
         if status == DownloadStatus.OK:
             file.data = data
         return status

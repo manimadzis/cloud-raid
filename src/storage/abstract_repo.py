@@ -1,21 +1,28 @@
-import sqlite3
 from abc import ABC, abstractmethod
+from typing import Generator
+
+import aiosqlite
 
 
 class AbstractRepo(ABC):
-    def __init__(self, database: str = None):
+    def __init__(self, database: str):
         self.database = database
-        self._conn = sqlite3.connect(database)
-        self._conn.row_factory = sqlite3.Row
+        self._conn = None
 
-        self._cur = self._conn.cursor()
-        self._create_tables()
+    async def _ainit(self) -> "AbstractRepo":
+        self._conn = await aiosqlite.connect(self.database)
+        self._conn.row_factory = aiosqlite.Row
+        await self._create_tables()
+        return self
+
+    def __await__(self) -> Generator[None, None, "AbstractRepo"]:
+        return self._ainit().__await__()
 
     @abstractmethod
-    def _create_tables(self) -> None:
+    async def _create_tables(self) -> None:
         pass
 
-    def add_row(self, table: str, row_data: dict, replace=False) -> None:
+    async def add_row(self, table: str, row_data: dict, replace=False) -> None:
         """
         Add data from dictionary to table
 
@@ -29,28 +36,24 @@ class AbstractRepo(ABC):
         values = ','.join([str(row_data[x]) for x in row_data])
         sql = f"{clause} {table}({keys}) VALUES ({values.__repr__()})"
 
-        self.execute(sql)
+        await self.execute(sql)
 
-    def execute(self, sql: str, params: tuple = (), new_cursor=False) -> sqlite3.Cursor:
+    async def execute(self, sql: str, params: tuple = ()) -> aiosqlite.Cursor:
         """
         Execute sql statement
         :param sql: SQL statement
         :param params:
-        :param new_cursor: if True - create new cursor and return it
         :return: cursor
         """
-        if new_cursor:
-            return self.execute(sql, params)
+        return await self._conn.execute(sql, params)
 
-        return self._cur.execute(sql, params)
+    async def executemany(self, sql: str, params: tuple) -> aiosqlite.Cursor:
+        return await self._conn.executemany(sql, params)
 
-    def executemany(self, sql: str, params: tuple, new_cursor=False) -> sqlite3.Cursor:
-        if new_cursor:
-            return self.executemany(sql, params)
-        return self._cur.executemany(sql, params)
+    async def executescript(self, sql_script: str) -> aiosqlite.Cursor:
+        return await self._conn.executescript(sql_script)
 
-    def executescript(self, sql_script: str) -> sqlite3.Cursor:
-        return self._cur.executescript(sql_script)
+    async def commit(self) -> None:
+        await self._conn.commit()
 
-    def commit(self) -> None:
-        self._conn.commit()
+
