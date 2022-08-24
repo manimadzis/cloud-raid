@@ -17,7 +17,7 @@ async def download(token: str, filename: str, session: aiohttp.ClientSession) ->
         'Accept': 'application/json',
         'Authorization': f'OAuth {token}'
     }
-
+    print(token)
     params = {
         'path': filename
     }

@@ -15,8 +15,12 @@ class Parser(argparse.ArgumentParser):
         self._upload_subparser.add_argument("src")
         self._upload_subparser.add_argument("dst")
 
+        self._download_subparser.add_argument("src")
+        self._download_subparser.add_argument("dst")
+
+
     def set_upload_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._upload_subparser.set_defaults(func=func)
 
-    def set_download_handler(self, func: Callable[[argparse.Action], None]):
+    def set_download_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._download_subparser.set_defaults(func=func)

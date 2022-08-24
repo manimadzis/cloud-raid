@@ -9,7 +9,9 @@ from cli.parser import Parser
 from config import Config
 from entities import File
 from network.balancer import Balancer
+from network.downloader import Downloader
 from network.uploader import Uploader
+from network.yandex_disk.dowload import DownloadStatus
 from network.yandex_disk.upload import UploadStatus
 from storage.block_repo import BlockRepo
 
@@ -31,11 +33,23 @@ class CLI:
 
     def _init_parser(self):
         self._parser.set_upload_handler(self._upload_accessor)
+        self._parser.set_download_handler(self._download_accessor)
 
     async def _upload_accessor(self, args: argparse.Action):
         src, dst = args.src, args.dst
         status = await self._upload_file(src, dst)
         logger.info(status)
+
+    async def _download_accessor(self, args: argparse.Action):
+        src, dst = args.src, args.dst
+        status = await self._download_file(src, dst)
+        logger.info(status)
+
+    async def _download_file(self, src: str, dst: str) -> DownloadStatus:
+        async with Downloader(self._block_repo) as downloader:
+            status = await downloader.download(File(filename=src, path=dst))
+
+        return status
 
     async def _upload_file(self, src: str, dst: str = None) -> UploadStatus:
         async with Uploader(self._balancer, await self._block_repo) as u:

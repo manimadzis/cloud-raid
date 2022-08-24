@@ -50,7 +50,7 @@ class BlockRepo(AbstractRepo):
     async def get_token(self, disk_id: int) -> str:
         cur = await self.execute('SELECT token FROM disks WHERE id = ?', (disk_id,))
         try:
-            token = cur.fetchone()
+            token = (await cur.fetchone())['token']
         except aiosqlite.Error as e:
             logger.error(e)
             token = ""
@@ -60,7 +60,7 @@ class BlockRepo(AbstractRepo):
     async def get_blocks(self, file: File) -> Tuple[Block]:
         cur = await self.execute('SELECT * FROM blocks '
                                  'WHERE filename = ? '
-                                 'ORDER BY number', (file.path,))
+                                 'ORDER BY number', (file.filename,))
         blocks = []
         async for row in cur:
             token = await self.get_token(row['disk_id'])
