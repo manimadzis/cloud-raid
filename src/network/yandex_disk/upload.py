@@ -14,7 +14,6 @@ class UploadStatus(Enum):
 
 async def upload(token: str, filename: str, data: bytes, session: aiohttp.ClientSession,
                  overwrite=False) -> UploadStatus:
-    
     if data is None or len(data) == 0:
         return UploadStatus.BAD_DATA
 

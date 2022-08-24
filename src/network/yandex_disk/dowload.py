@@ -11,7 +11,8 @@ class DownloadStatus(Enum):
     BAD_DOWNLOAD_REQUEST = auto()
 
 
-async def download(token: str, filename: str, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Union[bytes, None]]:
+async def download(token: str, filename: str, session: aiohttp.ClientSession) -> Tuple[
+    DownloadStatus, Union[bytes, None]]:
     headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',

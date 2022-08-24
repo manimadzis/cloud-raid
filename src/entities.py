@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Union
 
 
-@dataclass(order=True)
+@dataclass(order=True, kw_only=True)
 class Disk:
     id_: int
     token: str = field(compare=False, repr=False)
@@ -12,7 +12,7 @@ class Disk:
     total_space: int = field(default=0, repr=False)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Block:
     filename: str = ""
     number: int = 0
@@ -30,9 +30,12 @@ class Block:
             file.write(self.data)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class File:
     filename: str
-    path: str
-    block_size: int = 2 * 2 ** 20
+    path: str = ""
+
+    # setting
+    block_size: int = int(0.5 * 2 ** 20)
     duplicate_count: int = 1
+    worker_count: int = 10

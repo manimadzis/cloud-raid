@@ -55,5 +55,3 @@ class AbstractRepo(ABC):
 
     async def commit(self) -> None:
         await self._conn.commit()
-
-
