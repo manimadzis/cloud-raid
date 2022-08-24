@@ -12,15 +12,22 @@ class Parser(argparse.ArgumentParser):
         subparsers = self.add_subparsers(parser_class=argparse.ArgumentParser)
         self._upload_subparser = subparsers.add_parser("upload", help="Upload file")
         self._download_subparser = subparsers.add_parser("download", help="Download file")
+        self._adddisk_subparser = subparsers.add_parser("adddisk", help="Add new disks")
 
         self._upload_subparser.add_argument("src", help="Path to file")
         self._upload_subparser.add_argument("dst", help="Filename in system", nargs='?', default="")
 
         self._download_subparser.add_argument("src", help="Path to file")
         self._download_subparser.add_argument("dst", help="Filename in system", nargs='?', default="")
+        self._download_subparser.add_argument("--temp-dir", help="Path to temp directory", default="blocks", dest="temp_dir")
+
+        self._adddisk_subparser.add_argument("tokens", help="List of tokens", nargs="+")
 
     def set_upload_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._upload_subparser.set_defaults(func=func)
 
     def set_download_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._download_subparser.set_defaults(func=func)
+
+    def set_adddisk_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._adddisk_subparser.set_defaults(func=func)

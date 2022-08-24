@@ -1,5 +1,5 @@
 import asyncio
-from typing import Iterator, Tuple
+from typing import Iterator, Tuple, List
 
 import aiohttp
 from loguru import logger
@@ -32,7 +32,7 @@ class Uploader:
             number = 0
             while data:
                 for _ in range(file.duplicate_count):
-                    yield Block(filename=file.path, number=number, data=data)
+                    yield Block(filename=file.filename, number=number, data=data)
                 data = f.read(file.block_size)
                 number += 1
 
@@ -63,16 +63,19 @@ class Uploader:
             done, pending = await asyncio.wait(tasks, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
 
             tasks = list(pending)
-            done_task = list(done)[0]
-            status, block = done_task.result()
+            done_task: List[asyncio.Task] = list(done)
 
-            if status != UploadStatus.OK:
-                tasks.append(asyncio.create_task(self._upload_block(block)))
-            else:
-                done_tasks += len(done)
-                yield done_tasks
+            for task in done_task:
+                status, block = task.result()
 
-            await self._blocks_repo.add_block(block)
+                if status != UploadStatus.OK:
+                    tasks.append(asyncio.create_task(self._upload_block(block)))
+                else:
+                    done_tasks += 1
+
+                await self._blocks_repo.add_block(block)
+            yield done_tasks
+
         await self._blocks_repo.commit()
         logger.info(f"Upload file: {file}")
 

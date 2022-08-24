@@ -14,7 +14,7 @@ class BlockRepo(AbstractRepo):
     async def _create_tables(self) -> None:
         await self.execute("""CREATE TABLE IF NOT EXISTS disks(
         id INTEGER PRIMARY KEY,
-        token STRING NOT NULL);
+        token STRING UNIQUE NOT NULL);
         """)
 
         await self.execute("""CREATE TABLE IF NOT EXISTS blocks(
@@ -52,7 +52,7 @@ class BlockRepo(AbstractRepo):
         try:
             token = (await cur.fetchone())['token']
         except aiosqlite.Error as e:
-            logger.error(e)
+            logger.exception(e)
             token = ""
 
         return token

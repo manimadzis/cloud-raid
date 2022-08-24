@@ -6,8 +6,8 @@ from typing import Union
 
 @dataclass(order=True, kw_only=True)
 class Disk:
-    id_: int
-    token: str = field(compare=False, repr=False)
+    id_: int = 0
+    token: str = field(default="", compare=False, repr=False)
     used_space: int = field(default=0, repr=False)
     total_space: int = field(default=0, repr=False)
 
@@ -25,7 +25,6 @@ class Block:
 
     def save(self, path: str = ""):
         filename = os.path.join(path, self.name)
-        print(filename)
         with open(filename, "wb") as file:
             file.write(self.data)
 

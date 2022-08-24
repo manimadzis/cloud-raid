@@ -28,7 +28,7 @@ class Downloader:
         blocks = await self._block_repo.get_blocks(File(filename=src))
         return len(blocks)
 
-    async def download_file(self, file: File) -> None:
+    async def download_file(self, file: File, temp_dir: str = "") -> None:
         tasks: List[asyncio.Task] = []
         blocks = await self._block_repo.get_blocks(file)
         index = 0
@@ -41,14 +41,19 @@ class Downloader:
                 index += 1
 
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            status, block = list(done)[0].result()
+            done_tasks: List[asyncio.Task] = list(done)
             tasks = list(pending)
-            if status != DownloadStatus.OK:
-                tasks.append(asyncio.create_task(self._download_block(blocks[index])))
-            else:
-                block.save()
-                blocks_count += len(done)
-                yield blocks_count
+
+            for task in done_tasks:
+                status, block = task.result()
+
+                if status != DownloadStatus.OK:
+                    tasks.append(asyncio.create_task(self._download_block(blocks[index])))
+                else:
+                    block.save(temp_dir)
+                    blocks_count += 1
+
+            yield blocks_count
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession()
