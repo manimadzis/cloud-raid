@@ -14,15 +14,16 @@ class BlockRepo(AbstractRepo):
     async def _create_tables(self) -> None:
         await self.execute("""CREATE TABLE IF NOT EXISTS disks(
         id INTEGER PRIMARY KEY,
-        token STRING);
+        token STRING NOT NULL);
         """)
 
         await self.execute("""CREATE TABLE IF NOT EXISTS blocks(
         id INTEGER PRIMARY KEY,
-        disk_id INTEGER,
-        filename STRING,
-        number INTEGER,
-        name STRING );
+        disk_id INTEGER NOT NULL,
+        filename STRING NOT NULL,
+        number INTEGER NOT NULL,
+        name STRING NOT NULL,
+        FOREIGN KEY (disk_id) REFERENCES disks(id));
         """)
 
     async def add_block(self, block: Block) -> None:

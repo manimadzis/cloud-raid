@@ -1,9 +1,13 @@
 import argparse
 import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor
 
-from entities import File
 from loguru import logger
+
+from cli.parser import Parser
+from config import Config
+from entities import File
 from network.balancer import Balancer
 from network.uploader import Uploader
 from network.yandex_disk.upload import UploadStatus
@@ -11,22 +15,24 @@ from storage.block_repo import BlockRepo
 
 
 class CLI:
-    def __init__(self, block_repo: BlockRepo, balancer: Balancer):
-        self._block_repo = block_repo
-        self._balancer = balancer
+    def __init__(self, config: Config, parser: Parser):
+        pool = ThreadPoolExecutor()
 
-        self._parser = argparse.ArgumentParser()
-        self._subparsers = self._parser.add_subparsers()
+        async def wrapper(block_repo: BlockRepo):
+            return await block_repo
 
-        self._upload_subparser = self._subparsers.add_parser("upload")
-        self._download = self._subparsers.add_parser("download")
+        self._block_repo = pool.submit(asyncio.run, wrapper(BlockRepo(config.db_path))).result()
+        disks = pool.submit(asyncio.run, (self._block_repo.get_disks())).result()
+        self._balancer = Balancer(disks)
 
-        self._upload_subparser.add_argument("src")
-        self._upload_subparser.add_argument("dst")
-        self._upload_subparser.set_defaults(func=self._upload_accessor)
+        self._parser = parser
 
-    async def _upload_accessor(self, args):
-        print(type(args))
+        self._init_parser()
+
+    def _init_parser(self):
+        self._parser.set_upload_handler(self._upload_accessor)
+
+    async def _upload_accessor(self, args: argparse.Action):
         src, dst = args.src, args.dst
         status = await self._upload_file(src, dst)
         logger.info(status)
@@ -45,4 +51,3 @@ class CLI:
     async def start(self):
         args = self._parse()
         await args.func(args)
-

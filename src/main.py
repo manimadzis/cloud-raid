@@ -1,20 +1,25 @@
 import asyncio
+from argparse import ArgumentParser
 
-from cli import CLI
-from entities import Disk
+from cli import CLI, Parser
+from config import Config
 from network.balancer import Balancer
 from storage.block_repo import BlockRepo
 
 
-async def main():
-    block_repo = await BlockRepo("tmp.sqlite")
-    # balancer = Balancer(await block_repo.get_disks())
-    disks = [
-        Disk(token="AQAAAABd-AuhAADLW8ndhqgT-k6qu5pkxYCYJ54", id_=1)
-    ]
-    balancer = Balancer(disks)
+def init_parser(parser: ArgumentParser):
+    parser.add_argument('--config', dest='config_path', default="config.toml")
 
-    cli = CLI(block_repo, balancer)
+
+async def main():
+    parser = Parser()
+    args = parser.parse_args()
+
+    config = Config.load(args.config_path)
+    if not config:
+        raise Exception("Cannot load config")
+
+    cli = CLI(config, parser)
     await cli.start()
 
 
