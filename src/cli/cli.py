@@ -1,25 +1,24 @@
 import argparse
-import asyncio
 import os
-from concurrent.futures import ThreadPoolExecutor
-from typing import Iterable
 
 import aiosqlite
 from loguru import logger
 
 from cli.parser import Parser
 from config import Config
-from entities import File, Disk, Block
+from entities import File, Disk
 from network.balancer import Balancer
 from network.downloader import Downloader
 from network.uploader import Uploader
 from storage.block_repo import BlockRepo
+from vfs import VFS
 
 
 class CLI:
     def __init__(self, config: Config, parser: Parser):
         self._balancer: Balancer = None
-        self._block_repo : BlockRepo = None
+        self._block_repo: BlockRepo = None
+        self._vfs: VFS = None
         self._parser = parser
         self.config = config
         self._init_parser()
@@ -29,7 +28,6 @@ class CLI:
         disks = await self._block_repo.get_disks()
         self._balancer = Balancer(disks)
 
-
     @staticmethod
     def _replace_line(s: str):
         print("\r" + s, end='')
@@ -38,6 +36,7 @@ class CLI:
         self._parser.set_upload_handler(self._upload_handler)
         self._parser.set_download_handler(self._download_handler)
         self._parser.set_adddisk_handler(self._adddisk_handler)
+        self._parser.set_list_handler(self._list_handler)
 
     async def _upload_handler(self, args: argparse.Action):
         src, dst = args.src, args.dst
@@ -71,6 +70,10 @@ class CLI:
                 logger.exception(e)
         await self._block_repo.commit()
 
+    async def _list_handler(self, args: argparse.Action):
+        self._vfs = VFS(self._block_repo)
+        await self._vfs.load()
+        self._vfs.tree()
 
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
         async with Downloader(self._block_repo) as downloader:

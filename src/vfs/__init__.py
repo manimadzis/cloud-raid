@@ -1,12 +1,18 @@
+from typing import List
+
 from fs.memoryfs import MemoryFS
 
-m = MemoryFS()
-m.tree()
+from entities import File
+from storage.block_repo import BlockRepo
 
-m.makedirs("/home/user")
-m.makedirs("/home/user2")
-m.makedirs("/home2")
-m.upload()
-m.setinfo()
 
-m.tree()
+class VFS(MemoryFS):
+    def __init__(self, block_repo: BlockRepo):
+        super(VFS, self).__init__()
+        self._block_repo = block_repo
+        self._files: List[File] = None
+
+    async def load(self):
+        files = await self._block_repo.get_files()
+        for file in files:
+            self.makedirs(file.filename)

@@ -131,3 +131,15 @@ class BlockRepo(AbstractRepo):
             block.file = file
 
         return tuple(blocks)
+
+    async def get_files(self):
+        cur = await self.execute("SELECT id, filename, size "
+                                 "FROM files")
+        files = []
+        async for row in cur:
+            file = File(id=row['id'],
+                        filename=row['filename'],
+                        size=row['size'])
+            files.append(file)
+
+        return tuple(files)
