@@ -7,11 +7,12 @@ import aiosqlite
 class AbstractRepo(ABC):
     def __init__(self, database: str):
         self.database = database
-        self._conn = None
+        self._conn: aiosqlite.Connection = None
 
     async def _ainit(self) -> "AbstractRepo":
         self._conn = await aiosqlite.connect(self.database)
         self._conn.row_factory = aiosqlite.Row
+        await self._conn.execute("PRAGMA foreign_keys = ON")
         await self._create_tables()
         return self
 
@@ -22,7 +23,7 @@ class AbstractRepo(ABC):
     async def _create_tables(self) -> None:
         pass
 
-    async def add_row(self, table: str, row_data: dict, replace=False) -> None:
+    async def add_row(self, table: str, row_data: dict, replace=False) -> aiosqlite.Cursor:
         """
         Add data from dictionary to table
 
@@ -36,7 +37,7 @@ class AbstractRepo(ABC):
         values = ','.join([repr(row_data[x]) for x in row_data])
         sql = f"{clause} {table}({keys}) VALUES ({values})"
 
-        await self.execute(sql)
+        return await self.execute(sql)
 
     async def execute(self, sql: str, params: tuple = ()) -> aiosqlite.Cursor:
         """
@@ -55,3 +56,6 @@ class AbstractRepo(ABC):
 
     async def commit(self) -> None:
         await self._conn.commit()
+
+    async def close(self):
+        await self._conn.close()

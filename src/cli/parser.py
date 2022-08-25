@@ -8,6 +8,7 @@ class Parser(argparse.ArgumentParser):
 
         self.add_argument('--config', dest='config_path', default="config.toml", help="Path to config file")
         self.add_argument('--debug', action="store_true", help="Enable debug output")
+        self.add_argument('--log', help="Path to log file", default="log.txt")
 
         subparsers = self.add_subparsers(parser_class=argparse.ArgumentParser)
         self._upload_subparser = subparsers.add_parser("upload", help="Upload file")

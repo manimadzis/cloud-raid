@@ -6,19 +6,34 @@ from typing import Union
 
 @dataclass(order=True, kw_only=True)
 class Disk:
-    id_: int = 0
+    id: int = 0
     token: str = field(default="", compare=False, repr=False)
     used_space: int = field(default=0, repr=False)
     total_space: int = field(default=0, repr=False)
 
 
 @dataclass(kw_only=True)
-class Block:
+class File:
+    id: int = 0
     filename: str = ""
-    number: int = 0
+    path: str = ""
+    size: int = 0
+
+    # setting
+    block_size: int = int(2 * 2 ** 20)
+    duplicate_count: int = 1
+    worker_count: int = 10
+
+
+@dataclass(kw_only=True)
+class Block:
+    id: int = 0
     name: str = ""
-    disk: Union[Disk, None] = None
-    data: Union[bytes, None] = field(default=None, repr=False)
+    number: int = 0
+
+    file: File = None
+    disk: Disk = None
+    data: bytes = field(default=None, repr=False)
 
     def copy(self):
         return copy(self)
@@ -28,13 +43,3 @@ class Block:
         with open(filename, "wb") as file:
             file.write(self.data)
 
-
-@dataclass(kw_only=True)
-class File:
-    filename: str
-    path: str = ""
-
-    # setting
-    block_size: int = int(0.5 * 2 ** 20)
-    duplicate_count: int = 1
-    worker_count: int = 10

@@ -12,4 +12,5 @@ class Config:
         with open(path) as file:
             data = toml.load(file)
         # print(data)
-        return Config(db_path='tmp.sqlite')
+        return Config(db_path='tmp.sqlite',
+                      )

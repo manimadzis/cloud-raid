@@ -13,6 +13,8 @@ class Balancer:
         heapq.heapify(self._queue)
 
     def disks(self, count: int) -> Tuple[Disk]:
+        if not self._disks:
+            ValueError("Empty disks")
         if count > len(self._queue):
             count = len(self._queue)
         disks = [heapq.heappop(self._queue) for _ in range(count)]

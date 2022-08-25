@@ -12,7 +12,7 @@ async def main():
     args = parser.parse_args()
 
     logger.remove()
-    logger.add("log.txt", rotation="20 MB", enqueue=True)
+    logger.add(args.log, rotation="20 MB", enqueue=True)
     if args.debug:
         logger.add(sys.stderr, colorize=True, enqueue=True, format="{time} | {level} | {message}")
 
@@ -21,9 +21,9 @@ async def main():
         raise Exception("Cannot load config")
 
     cli = CLI(config, parser)
+    await cli.init()
     await cli.start()
 
 
 if __name__ == '__main__':
     asyncio.run(main())
-    exit()

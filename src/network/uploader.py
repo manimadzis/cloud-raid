@@ -32,7 +32,7 @@ class Uploader:
             number = 0
             while data:
                 for _ in range(file.duplicate_count):
-                    yield Block(filename=file.filename, number=number, data=data)
+                    yield Block(file=file, number=number, data=data)
                 data = f.read(file.block_size)
                 number += 1
 
@@ -49,6 +49,8 @@ class Uploader:
         block_generator = self._block_generator(file)
         first = True
         done_tasks = 0
+
+        await self._blocks_repo.add_file(file)
 
         while len(tasks) != 0 or first:
             first = False

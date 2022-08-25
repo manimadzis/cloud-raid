@@ -1,5 +1,6 @@
 import asyncio
-from typing import List, Tuple
+import os
+from typing import List, Tuple, Iterable
 
 import aiohttp
 from loguru import logger
@@ -24,13 +25,14 @@ class Downloader:
 
         return status, block
 
-    async def count_blocks(self, src: str):
-        blocks = await self._block_repo.get_blocks(File(filename=src))
+    async def count_blocks(self, file: File) -> int:
+        blocks = await self._block_repo.get_blocks(file)
         return len(blocks)
 
     async def download_file(self, file: File, temp_dir: str = "") -> None:
         tasks: List[asyncio.Task] = []
         blocks = await self._block_repo.get_blocks(file)
+
         index = 0
         blocks_count = 0
         while index < len(blocks) or tasks:
@@ -54,6 +56,7 @@ class Downloader:
                     blocks_count += 1
 
             yield blocks_count
+        self._merge_blocks(file.path, blocks, temp_dir)
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession()
@@ -64,3 +67,11 @@ class Downloader:
 
     async def close(self):
         await self._session.close()
+
+    @staticmethod
+    def _merge_blocks(path: str, blocks: Iterable[Block], temp_dir: str):
+        with open(path, "wb") as f:
+            for block in blocks:
+                with open(os.path.join(temp_dir, block.name), "rb") as ff:
+                    data = ff.read()
+                f.write(data)
