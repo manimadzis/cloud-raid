@@ -37,6 +37,7 @@ class CLI:
         self._parser.set_download_handler(self._download_handler)
         self._parser.set_adddisk_handler(self._adddisk_handler)
         self._parser.set_list_handler(self._list_handler)
+        self._parser.set_listdisk_handler(self._listdisk_handler)
 
     async def _upload_handler(self, args: argparse.Action):
         src, dst = args.src, args.dst
@@ -74,6 +75,10 @@ class CLI:
         self._vfs = VFS(self._block_repo)
         await self._vfs.load()
         self._vfs.tree()
+
+    async def _listdisk_handler(self, args: argparse.Action):
+        disks = await self._block_repo.get_disks()
+        print('\n'.join(str(disk) for disk in disks))
 
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
         async with Downloader(self._block_repo) as downloader:

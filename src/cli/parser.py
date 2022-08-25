@@ -14,7 +14,8 @@ class Parser(argparse.ArgumentParser):
         self._upload_subparser = subparsers.add_parser("upload", help="Upload file")
         self._download_subparser = subparsers.add_parser("download", help="Download file")
         self._adddisk_subparser = subparsers.add_parser("adddisk", help="Add new disks")
-        self._list_subparser = subparsers.add_parser("list", help="Show list of file")
+        self._list_subparser = subparsers.add_parser("list", help="Show list of files")
+        self._listdisk_subparser = subparsers.add_parser("listdisk", help="Show list of disks")
 
         self._upload_subparser.add_argument("src", help="Path to file")
         self._upload_subparser.add_argument("dst", help="Filename in system", nargs='?', default="")
@@ -37,3 +38,7 @@ class Parser(argparse.ArgumentParser):
 
     def set_list_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._list_subparser.set_defaults(func=func)
+
+    def set_listdisk_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._listdisk_subparser.set_defaults(func=func)
+
