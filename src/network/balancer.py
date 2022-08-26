@@ -4,7 +4,7 @@ from typing import Tuple, Sequence
 
 from entities import Block
 from entities import Disk
-
+from exceptions import NoDisks
 
 class Balancer:
     def __init__(self, disks: Sequence[Disk]):
@@ -14,7 +14,8 @@ class Balancer:
 
     def disks(self, count: int) -> Tuple[Disk]:
         if not self._disks:
-            ValueError("Empty disks")
+            raise NoDisks()
+
         if count > len(self._queue):
             count = len(self._queue)
         disks = [heapq.heappop(self._queue) for _ in range(count)]

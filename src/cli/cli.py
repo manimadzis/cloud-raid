@@ -7,6 +7,7 @@ from loguru import logger
 from cli.parser import Parser
 from config import Config
 from entities import File, Disk
+from exceptions import *
 from network.balancer import Balancer
 from network.downloader import Downloader
 from network.uploader import Uploader
@@ -43,8 +44,23 @@ class CLI:
         src, dst = args.src, args.dst
         if not dst:
             _, dst = os.path.split(src)
+
+        block_size = args.block_size
+        file = File(filename=dst, path=src, block_size=block_size)
+
         print(f"Upload file {repr(src)} like {repr(dst)}")
-        await self._upload_file(src, dst)
+
+        try:
+            await self._upload_file(file)
+        except NoDisks as e:
+            print("No disks. Add one by adddisk command")
+            logger.exception(e)
+            return
+        except FileAlreadyExists as e:
+            print("File with this name already exists")
+            logger.exception(e)
+            return
+
         print("\nFile successfully uploaded")
 
     async def _download_handler(self, args: argparse.Action):
@@ -90,9 +106,8 @@ class CLI:
             async for done in downloader.download_file(file, temp_dir=temp_dir):
                 self._replace_line(f"{done}/{total_count} blocks downloaded")
 
-    async def _upload_file(self, src: str, dst: str) -> None:
+    async def _upload_file(self, file: File) -> None:
         async with Uploader(self._balancer, self._block_repo) as u:
-            file = File(filename=dst, path=src)
             total_blocks = u.count_blocks(file)
 
             try:

@@ -6,6 +6,8 @@ import toml
 @dataclass
 class Config:
     db_path: str
+    min_block_size: int
+    max_block_size: int
 
     @staticmethod
     def load(path: str) -> "Config":

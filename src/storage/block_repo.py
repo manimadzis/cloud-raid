@@ -20,7 +20,7 @@ class BlockRepo(AbstractRepo):
 
         await self.execute("""CREATE TABLE IF NOT EXISTS files(
         id INTEGER PRIMARY KEY,
-        filename STRING NOT NULL,
+        filename STRING NOT NULL UNIQUE,
         size INT NOT NULL);
         """)
 

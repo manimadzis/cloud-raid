@@ -1,6 +1,8 @@
 import argparse
 from typing import Callable, Coroutine
 
+from entities import File
+
 
 class Parser(argparse.ArgumentParser):
     def __init__(self):
@@ -19,13 +21,15 @@ class Parser(argparse.ArgumentParser):
 
         self._upload_subparser.add_argument("src", help="Path to file")
         self._upload_subparser.add_argument("dst", help="Filename in system", nargs='?', default="")
+        self._upload_subparser.add_argument("-b", "--block-size", help="Size of block in bytes", type=int,
+                                            default=File.block_size)
 
         self._download_subparser.add_argument("src", help="Path to file")
         self._download_subparser.add_argument("dst", help="Filename in system", nargs='?', default="")
-        self._download_subparser.add_argument("--temp-dir", help="Path to temp directory", default="blocks", dest="temp_dir")
+        self._download_subparser.add_argument("--temp-dir", help="Path to temp directory", default="blocks",
+                                              dest="temp_dir")
 
         self._adddisk_subparser.add_argument("tokens", help="List of tokens", nargs="+")
-
 
     def set_upload_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._upload_subparser.set_defaults(func=func)
@@ -41,4 +45,3 @@ class Parser(argparse.ArgumentParser):
 
     def set_listdisk_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._listdisk_subparser.set_defaults(func=func)
-

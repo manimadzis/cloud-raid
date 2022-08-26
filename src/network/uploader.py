@@ -1,3 +1,4 @@
+import aiosqlite
 import asyncio
 from typing import Iterator, Tuple, List
 
@@ -5,6 +6,7 @@ import aiohttp
 from loguru import logger
 
 from entities import File, Block
+from exceptions import FileAlreadyExists
 from network.balancer import Balancer
 from network.yandex_disk.upload import upload, UploadStatus
 from storage.block_repo import BlockRepo
@@ -36,8 +38,9 @@ class Uploader:
                 data = f.read(file.block_size)
                 number += 1
 
-    @staticmethod
-    def count_blocks(file: File):
+
+    def count_blocks(self, file: File) -> int:
+        self._balancer.count_blocks(file)
         block_generator = Uploader._block_generator(file)
         count = 0
         for _ in block_generator:
@@ -50,7 +53,11 @@ class Uploader:
         first = True
         done_tasks = 0
 
-        await self._blocks_repo.add_file(file)
+        try:
+            await self._blocks_repo.add_file(file)
+        except aiosqlite.IntegrityError as e:
+            logger.exception(e)
+            raise FileAlreadyExists()
 
         while len(tasks) != 0 or first:
             first = False
