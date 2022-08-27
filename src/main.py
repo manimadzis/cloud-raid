@@ -16,9 +16,21 @@ async def main():
     if args.debug:
         logger.add(sys.stderr, colorize=True, enqueue=True, format="{time} | {level} | {message}")
 
-    config = Config.load(args.config_path)
-    if not config:
-        raise Exception("Cannot load config")
+    config: Config = Config()
+
+    if args.config:
+        try:
+            config = Config.load(args.config_path)
+        except Exception as e:
+            logger.exception(e)
+            print("Invalid path to config")
+    else:
+        try:
+            config = Config.load("config.toml")
+        except Exception as e:
+            logger.exception(e)
+            config = Config()
+            config.save("config.toml")
 
     cli = CLI(config, parser)
     await cli.init()

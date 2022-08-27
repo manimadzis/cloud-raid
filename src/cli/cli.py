@@ -25,13 +25,14 @@ class CLI:
         self._block_repo: BlockRepo = None
         self._vfs: VFS = None
         self._parser = parser
-        self.config = config
+        self._config = config
         self._init_parser()
 
     async def init(self):
-        self._block_repo = await BlockRepo(self.config.db_path)
+        self._block_repo = await BlockRepo(self._config.db_path)
         disks = await self._block_repo.get_storages()
-        self._balancer = Balancer(disks)
+        self._balancer = Balancer(disks, min_block_size=self._config.min_block_size,
+                                  max_block_size=self._config.max_block_size)
 
     @staticmethod
     def _replace_line(s: str):
@@ -149,7 +150,6 @@ class CLI:
                 tasks.append(asyncio.create_task(self._delete_file(storage, filename, session)))
             await asyncio.gather(*tasks)
 
-
     # OTHER
 
     @staticmethod
@@ -159,7 +159,6 @@ class CLI:
             print(f"{filename} deleted")
         else:
             print(f"Failed to delete {filename}")
-
 
     async def _list_handler(self, args: argparse.Action):
         self._vfs = VFS(self._block_repo)

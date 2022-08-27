@@ -8,7 +8,7 @@ class Parser(argparse.ArgumentParser):
     def __init__(self):
         super(Parser, self).__init__()
 
-        self.add_argument('--config', dest='config_path', default="config.toml", help="Path to config file")
+        self.add_argument('--config', dest='config_path', default="", help="Path to config file")
         self.add_argument('--debug', action="store_true", help="Enable debug output")
         self.add_argument('--log', help="Path to log file", default="log.txt")
 
