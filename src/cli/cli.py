@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import os
 
 import aiohttp
@@ -11,7 +12,7 @@ from config import Config
 from exceptions import *
 from network.balancer import Balancer
 from network.downloader import Downloader
-from network.storage import StorageType
+from network.storage_base import StorageType, StorageBase, DeleteStatus
 from network.storage_creator import StorageCreator
 from network.uploader import Uploader
 from repository.block_repo import BlockRepo
@@ -39,9 +40,14 @@ class CLI:
     def _init_parser(self):
         self._parser.set_upload_handler(self._upload_handler)
         self._parser.set_download_handler(self._download_handler)
-        self._parser.set_addstorage_handler(self._addstorage_handler)
         self._parser.set_list_handler(self._list_handler)
-        self._parser.set_liststorage_handler(self._liststorage_handler)
+
+        self._parser.set_storage_add_handler(self._storage_add_handler)
+        self._parser.set_storage_list_handler(self._storage_list_handler)
+        self._parser.set_storage_files_handler(self._storage_files_handler)
+        self._parser.set_storage_delete_handler(self._storage_delete_handler)
+
+    # HANDLERS
 
     async def _upload_handler(self, args: argparse.Action):
         src, dst = args.src, args.dst
@@ -79,7 +85,7 @@ class CLI:
         await self._download_file(src, dst, temp_dir)
         print(f"\nFile {src} successfully downloaded to {dst}")
 
-    async def _addstorage_handler(self, args: argparse.Action):
+    async def _storage_add_handler(self, args: argparse.Action):
         token = args.token
         type_ = args.type
 
@@ -100,12 +106,17 @@ class CLI:
 
         await self._block_repo.commit()
 
-    async def _list_handler(self, args: argparse.Action):
-        self._vfs = VFS(self._block_repo)
-        await self._vfs.load()
-        self._vfs.tree()
+    async def _storage_files_handler(self, args: argparse.Action):
+        storage_id = args.storage_id
 
-    async def _liststorage_handler(self, args: argparse.Action):
+        async with aiohttp.ClientSession() as session:
+            storage = await self._block_repo.get_storage_by_id(storage_id)
+            files = await storage.files(session)
+
+        for file in files:
+            print(file.filename)
+
+    async def _storage_list_handler(self, args: argparse.Action):
         async with aiohttp.ClientSession() as s:
             storages = await self._block_repo.get_storages()
             for storage in storages:
@@ -120,6 +131,40 @@ class CLI:
                 used_space=used_space,
                 total_space=total_space,
             ))
+
+    async def _list_handler(self, args: argparse.Action):
+        self._vfs = VFS(self._block_repo)
+
+        await self._vfs.load()
+        self._vfs.tree()
+
+    async def _storage_delete_handler(self, args: argparse.Action):
+        storage_id = args.storage_id
+        filenames = args.filenames
+
+        storage = await self._block_repo.get_storage_by_id(storage_id)
+        tasks = []
+        async with aiohttp.ClientSession() as session:
+            for filename in filenames:
+                tasks.append(asyncio.create_task(self._delete_file(storage, filename, session)))
+            await asyncio.gather(*tasks)
+
+
+    # OTHER
+
+    @staticmethod
+    async def _delete_file(storage: StorageBase, filename: str, session: aiohttp.ClientSession):
+        status = await storage.delete(filename, session)
+        if status == DeleteStatus.OK:
+            print(f"{filename} deleted")
+        else:
+            print(f"Failed to delete {filename}")
+
+
+    async def _list_handler(self, args: argparse.Action):
+        self._vfs = VFS(self._block_repo)
+        await self._vfs.load()
+        self._vfs.tree()
 
     @staticmethod
     def _size2human(size: int):

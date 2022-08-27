@@ -5,6 +5,8 @@ from typing import Union, Tuple
 
 import aiohttp
 
+import entities
+
 
 class StorageType(Enum):
     YANDEX_DISK = 'yandex-disk'
@@ -21,15 +23,19 @@ class StorageType(Enum):
 
 
 class UploadStatus(Enum):
-    OK = auto()
-    FAILED = auto()
-    FILE_EXISTS = auto()
+    OK = 'Ok'
+    FAILED = 'Failed'
+    FILE_EXISTS = 'File Exists'
 
 
 class DownloadStatus(Enum):
-    OK = auto()
-    FAILED = auto()
-    FILE_DOESNT_EXITS = auto()
+    OK = 'Ok'
+    FAILED = 'Failed'
+    FILE_DOESNT_EXITS = 'File Doesn\'t Exist'
+
+class DeleteStatus(Enum):
+    OK = 'Ok'
+    FAILED = 'Failed'
 
 
 @dataclass(order=True, kw_only=True)
@@ -52,5 +58,13 @@ class StorageBase(ABC):
 
     @abstractmethod
     async def size(self, session: aiohttp.ClientSession) -> Tuple[int, int]:
+        pass
+
+    @abstractmethod
+    async def delete(self, filename: str, session: aiohttp.ClientSession) -> DeleteStatus:
+        pass
+
+    @abstractmethod
+    async def files(self, session: aiohttp.ClientSession) -> Tuple[entities.File]:
         pass
 

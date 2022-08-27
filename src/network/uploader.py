@@ -9,7 +9,7 @@ import entities
 import exceptions
 import repository
 from .balancer import Balancer
-from .storage import UploadStatus
+from .storage_base import UploadStatus
 
 
 class Uploader:

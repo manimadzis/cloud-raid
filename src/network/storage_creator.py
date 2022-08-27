@@ -1,4 +1,4 @@
-from .storage import StorageBase, StorageType
+from .storage_base import StorageBase, StorageType
 from .yandex_disk import YandexDisk
 
 

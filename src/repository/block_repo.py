@@ -5,7 +5,7 @@ import aiosqlite
 from loguru import logger
 
 from entities import Block, File
-from network.storage import StorageBase, StorageType
+from network.storage_base import StorageBase, StorageType
 from network.storage_creator import StorageCreator
 from repository.abstract_repo import AbstractRepo
 
@@ -152,3 +152,17 @@ class BlockRepo(AbstractRepo):
             block.file = file
 
         return tuple(blocks)
+
+    async def get_storage_by_id(self, id_: int) -> StorageBase:
+        cur = await self.execute('SELECT id, token, type '
+                                 'FROM storages '
+                                 'WHERE id = ?', (id_,))
+
+        row = await cur.fetchone()
+        type_ = StorageType.from_str(row['type'])
+        storage = StorageCreator.create(type_)
+        storage.id = row['id']
+        storage.token = row['token']
+
+        return storage
+

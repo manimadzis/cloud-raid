@@ -2,8 +2,6 @@ import os
 from copy import copy
 from dataclasses import dataclass, field
 
-import network.storage as _storage
-
 
 @dataclass(kw_only=True)
 class File:
@@ -18,6 +16,9 @@ class File:
     worker_count: int = 10
 
 
+import network.storage_base
+
+
 @dataclass(kw_only=True)
 class Block:
     id: int = 0
@@ -25,7 +26,7 @@ class Block:
     number: int = 0
 
     file: File = None
-    storage: _storage.StorageBase = None
+    storage: network.storage_base.StorageBase = None
     data: bytes = field(default=None, repr=False)
 
     def copy(self):
@@ -35,4 +36,3 @@ class Block:
         filename = os.path.join(path, self.name)
         with open(filename, "wb") as file:
             file.write(self.data)
-

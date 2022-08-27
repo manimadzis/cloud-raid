@@ -5,7 +5,7 @@ from typing import Tuple, Sequence
 
 import entities
 import exceptions
-from .storage import StorageBase
+from .storage_base import StorageBase
 
 
 class Balancer:

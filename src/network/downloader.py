@@ -7,7 +7,7 @@ from loguru import logger
 
 import entities
 import repository
-from .storage import DownloadStatus
+from .storage_base import DownloadStatus
 
 
 class Downloader:

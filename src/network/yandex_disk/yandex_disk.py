@@ -3,8 +3,8 @@ from typing import Tuple
 import aiohttp
 from loguru import logger
 
-from network.storage import StorageBase, DownloadStatus, UploadStatus, StorageType
-
+from entities import File
+from network.storage_base import StorageBase, DownloadStatus, UploadStatus, StorageType, DeleteStatus
 
 
 class YandexDisk(StorageBase):
@@ -93,3 +93,48 @@ class YandexDisk(StorageBase):
                 logger.error(f"Bad response. Code: {resp.status}")
                 return 0, 0
 
+    async def delete(self, filename: str, session: aiohttp.ClientSession) -> DeleteStatus:
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': f'OAuth {self.token}'
+        }
+
+        params = {
+            'path': filename,
+            'permanently': 'true',
+            'force_async': 'true'
+        }
+
+        async with session.delete('https://cloud-api.yandex.net/v1/disk/resources', headers=headers,
+                           params=params) as resp:
+            if resp.status in (202, 204):
+                return DeleteStatus.OK
+            else:
+                logger.error(f"Bad response. Code: {resp.status}")
+                return DeleteStatus.FAILED
+
+    async def files(self, session: aiohttp.ClientSession) -> Tuple[File]:
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': f'OAuth {self.token}'
+        }
+
+        params = {
+            'limit': 1000
+        }
+        files = []
+
+        async with session.get('https://cloud-api.yandex.net/v1/disk/resources/files', headers=headers,
+                               params=params) as resp:
+            if resp.status == 200:
+                json_data = await resp.json()
+                for file in json_data['items']:
+                    files.append(
+                        File(filename=file['name'], size=file['size'])
+                    )
+            else:
+                logger.error(f"Bad response. Code: {resp.status}")
+
+        return tuple(files)
