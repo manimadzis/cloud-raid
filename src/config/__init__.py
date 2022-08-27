@@ -15,4 +15,4 @@ class Config:
             data = toml.load(file)
         # print(data)
         return Config(db_path='tmp.sqlite',
-                      )
+                      min_block_size=10, max_block_size=100)

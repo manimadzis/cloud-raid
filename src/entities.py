@@ -1,15 +1,8 @@
 import os
 from copy import copy
 from dataclasses import dataclass, field
-from typing import Union
 
-
-@dataclass(order=True, kw_only=True)
-class Disk:
-    id: int = 0
-    token: str = field(default="", compare=False, repr=False)
-    used_space: int = field(default=0, repr=False)
-    total_space: int = field(default=0, repr=False)
+import network.storage as _storage
 
 
 @dataclass(kw_only=True)
@@ -32,7 +25,7 @@ class Block:
     number: int = 0
 
     file: File = None
-    disk: Disk = None
+    storage: _storage.StorageBase = None
     data: bytes = field(default=None, repr=False)
 
     def copy(self):

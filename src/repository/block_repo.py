@@ -4,8 +4,10 @@ from typing import Tuple, Generator
 import aiosqlite
 from loguru import logger
 
-from entities import Block, Disk, File
-from storage.abstract_repo import AbstractRepo
+from entities import Block, File
+from network.storage import StorageBase, StorageType
+from network.storage_creator import StorageCreator
+from repository.abstract_repo import AbstractRepo
 
 
 class BlockRepo(AbstractRepo):
@@ -13,9 +15,10 @@ class BlockRepo(AbstractRepo):
         return self._ainit().__await__()
 
     async def _create_tables(self) -> None:
-        await self.execute("""CREATE TABLE IF NOT EXISTS disks(
+        await self.execute("""CREATE TABLE IF NOT EXISTS storages(
         id INTEGER PRIMARY KEY,
-        token STRING UNIQUE NOT NULL);
+        token STRING UNIQUE NOT NULL,
+        type STRING NOT NULL);
         """)
 
         await self.execute("""CREATE TABLE IF NOT EXISTS files(
@@ -26,26 +29,27 @@ class BlockRepo(AbstractRepo):
 
         await self.execute("""CREATE TABLE IF NOT EXISTS blocks(
         id INTEGER PRIMARY KEY,
-        disk_id INTEGER NOT NULL,
+        storage_id INTEGER NOT NULL,
         file_id INTEGER NOT NULL,
         number INTEGER NOT NULL,
         name STRING NOT NULL,
-        FOREIGN KEY (disk_id) REFERENCES disks(id),
+        FOREIGN KEY (storage_id) REFERENCES storages(id),
         FOREIGN KEY (file_id) REFERENCES files(id));
         """)
 
     async def add_block(self, block: Block) -> None:
         cur = await self.add_row('blocks', {
-            'disk_id': block.disk.id,
+            'storage_id': block.storage.id,
             'file_id': block.file.id,
             'name': block.name,
             'number': block.number,
         })
         block.id = cur.lastrowid
 
-    async def add_disk(self, disk: Disk) -> None:
-        await self.add_row('disks', {
-            'token': disk.token
+    async def add_storage(self, disk: StorageBase) -> None:
+        await self.add_row('storages', {
+            'token': disk.token,
+            'type': str(disk.type)
         })
 
     async def add_file(self, file: File):
@@ -57,23 +61,31 @@ class BlockRepo(AbstractRepo):
 
     async def get_files(self) -> Tuple[File]:
         files = []
-        cur = await self.execute('SELECT id, filename, size FROM files;')
+        cur = await self.execute('SELECT id, filename, size '
+                                 'FROM files')
         for row in await cur.fetchall():
             files.append(File(filename=row['filename'],
                               id=row['id'],
                               size=row['size']))
         return tuple(files)
 
-    async def get_disks(self) -> Tuple[Disk]:
-        cur = await self.execute('SELECT id, token FROM disks;')
+    async def get_storages(self) -> Tuple[StorageBase]:
+        cur = await self.execute('SELECT id, token, type '
+                                 'FROM storages')
 
         disks = []
         async for row in cur:
-            disks.append(Disk(id=row['id'], token=row['token']))
+            type_ = StorageType.from_str(row['type'])
+            storage = StorageCreator.create(type_)
+            storage.id = row['id']
+            storage.token = row['token']
+            disks.append(storage)
         return tuple(disks)
 
-    async def get_token(self, disk: Disk) -> Disk:
-        cur = await self.execute('SELECT token FROM disks WHERE id = ?', (disk.id,))
+    async def get_token(self, disk: StorageBase) -> StorageBase:
+        cur = await self.execute('SELECT token '
+                                 'FROM storages '
+                                 'WHERE id = ?', (disk.id,))
         try:
             disk.token = (await cur.fetchone())['token']
         except aiosqlite.Error as e:
@@ -99,47 +111,44 @@ class BlockRepo(AbstractRepo):
         file.size = row['size']
         return file
 
-    async def get_disk(self, disk: Disk) -> Disk:
-        cur = await self.execute('SELECT token '
-                                 'FROM disks '
-                                 'WHERE id = ?', (disk.id,))
+    async def get_disk_by_id(self, id_: int) -> StorageBase:
+        cur = await self.execute('SELECT token, type '
+                                 'FROM storages '
+                                 'WHERE id = ?', (id_,))
         row = await cur.fetchone()
-        disk.token = row['token']
-        return disk
+        type_ = StorageType.from_str(row['type'])
+        storage = StorageCreator.create(type_)
+        storage.id= id_
+        storage.token = row['token']
+        storage.type = type_
+        return storage
 
     async def get_blocks(self, file: File) -> Tuple[Block]:
-        cur = await self.execute('SELECT id, number, name, disk_id, file_id FROM blocks '
+        cur = await self.execute('SELECT id, number, name, storage_id, file_id '
+                                 'FROM blocks '
                                  'WHERE file_id = ? '
                                  'ORDER BY number', (file.id,))
         blocks = []
-        disk_ids = []
+        storage_ids = []
         async for row in cur:
             blocks.append(Block(number=row['number'],
                                 name=row['name'],
                                 id=row['id']))
-            disk_ids.append(row['disk_id'])
+            storage_ids.append(row['storage_id'])
 
-        disks = {}
+        storages = {}
         tasks = []
-        for disk_id in disk_ids:
-            disks[disk_id] = Disk(id=disk_id)
-            tasks.append(asyncio.create_task(self.get_disk(disks[disk_id])))
+
+        storage_ids_set = set(storage_ids)
+        for storage_id in storage_ids_set:
+            tasks.append(asyncio.create_task(self.get_disk_by_id(storage_id)))
         await asyncio.gather(*tasks)
 
-        for block, disk_id in zip(blocks, disk_ids):
-            block.disk = disks[disk_id]
+        for task, storage_id in zip(tasks, storage_ids_set):
+            storages[storage_id] = task.result()
+
+        for block, storage_id in zip(blocks, storage_ids):
+            block.storage = storages[storage_id]
             block.file = file
 
         return tuple(blocks)
-
-    async def get_files(self):
-        cur = await self.execute("SELECT id, filename, size "
-                                 "FROM files")
-        files = []
-        async for row in cur:
-            file = File(id=row['id'],
-                        filename=row['filename'],
-                        size=row['size'])
-            files.append(file)
-
-        return tuple(files)

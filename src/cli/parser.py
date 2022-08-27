@@ -15,9 +15,9 @@ class Parser(argparse.ArgumentParser):
         subparsers = self.add_subparsers(parser_class=argparse.ArgumentParser)
         self._upload_subparser = subparsers.add_parser("upload", help="Upload file")
         self._download_subparser = subparsers.add_parser("download", help="Download file")
-        self._adddisk_subparser = subparsers.add_parser("adddisk", help="Add new disks")
+        self._addstorage_subparser = subparsers.add_parser("addstorage", help="Add new storage")
         self._list_subparser = subparsers.add_parser("list", help="Show list of files")
-        self._listdisk_subparser = subparsers.add_parser("listdisk", help="Show list of disks")
+        self._liststorage_subparser = subparsers.add_parser("liststorage", help="Show list of storages")
 
         self._upload_subparser.add_argument("src", help="Path to file")
         self._upload_subparser.add_argument("dst", help="Filename in system", nargs='?', default="")
@@ -29,7 +29,9 @@ class Parser(argparse.ArgumentParser):
         self._download_subparser.add_argument("--temp-dir", help="Path to temp directory", default="blocks",
                                               dest="temp_dir")
 
-        self._adddisk_subparser.add_argument("tokens", help="List of tokens", nargs="+")
+        self._addstorage_subparser.add_argument("type", help="Type of storage", choices=["yandex-disk"])
+        self._addstorage_subparser.add_argument("token", help="Authorization token")
+
 
     def set_upload_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._upload_subparser.set_defaults(func=func)
@@ -37,11 +39,11 @@ class Parser(argparse.ArgumentParser):
     def set_download_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._download_subparser.set_defaults(func=func)
 
-    def set_adddisk_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
-        self._adddisk_subparser.set_defaults(func=func)
+    def set_addstorage_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._addstorage_subparser.set_defaults(func=func)
 
     def set_list_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._list_subparser.set_defaults(func=func)
 
-    def set_listdisk_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
-        self._listdisk_subparser.set_defaults(func=func)
+    def set_liststorage_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._liststorage_subparser.set_defaults(func=func)

@@ -3,7 +3,7 @@ class Error(Exception):
         pass
 
 
-class NoDisks(Error):
+class NoStorage(Error):
     pass
 
 class FileAlreadyExists(Error):

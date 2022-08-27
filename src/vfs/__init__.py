@@ -3,7 +3,7 @@ from typing import List
 from fs.memoryfs import MemoryFS
 
 from entities import File
-from storage.block_repo import BlockRepo
+from repository.block_repo import BlockRepo
 
 
 class VFS(MemoryFS):

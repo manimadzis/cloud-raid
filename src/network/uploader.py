@@ -1,25 +1,26 @@
-import aiosqlite
 import asyncio
 from typing import Iterator, Tuple, List
 
 import aiohttp
+import aiosqlite
 from loguru import logger
 
-from entities import File, Block
-from exceptions import FileAlreadyExists
-from network.balancer import Balancer
-from network.yandex_disk.upload import upload, UploadStatus
-from storage.block_repo import BlockRepo
+import entities
+import exceptions
+import repository
+from .balancer import Balancer
+from .storage import UploadStatus
 
 
 class Uploader:
-    def __init__(self, balancer: Balancer, blocks_repo: BlockRepo):
+    def __init__(self, balancer: Balancer, blocks_repo: repository.BlockRepo):
         self._balancer = balancer
         self._blocks_repo = blocks_repo
         self._session = None
 
-    async def _upload_block(self, block: Block) -> Tuple[UploadStatus, Block]:
-        status = await upload(block.disk.token, block.name, block.data, self._session)
+    async def _upload_block(self, block: entities.Block) -> Tuple[UploadStatus, entities.Block]:
+        status = await block.storage.upload(block.name, block.data, self._session)
+        # status = UploadStatus.OK
         if status == UploadStatus.OK:
             logger.info(f"Upload block: {block}")
         else:
@@ -28,26 +29,25 @@ class Uploader:
         return status, block
 
     @staticmethod
-    def _block_generator(file: File) -> Iterator[Block]:
+    def _block_generator(file: entities.File) -> Iterator[entities.Block]:
         with open(file.path, "rb") as f:
             data = f.read(file.block_size)
             number = 0
             while data:
                 for _ in range(file.duplicate_count):
-                    yield Block(file=file, number=number, data=data)
+                    yield entities.Block(file=file, number=number, data=data)
                 data = f.read(file.block_size)
                 number += 1
 
-
-    def count_blocks(self, file: File) -> int:
-        self._balancer.count_blocks(file)
+    def count_blocks(self, file: entities.File) -> int:
+        file.block_size = self._balancer.block_size(file)
         block_generator = Uploader._block_generator(file)
         count = 0
         for _ in block_generator:
             count += 1
         return count
 
-    async def upload_file(self, file: File, timeout: float = None):
+    async def upload_file(self, file: entities.File, timeout: float = None):
         tasks = []
         block_generator = self._block_generator(file)
         first = True
@@ -57,7 +57,9 @@ class Uploader:
             await self._blocks_repo.add_file(file)
         except aiosqlite.IntegrityError as e:
             logger.exception(e)
-            raise FileAlreadyExists()
+            raise exceptions.FileAlreadyExists()
+
+        file.block_size = self._balancer.block_size(file)
 
         while len(tasks) != 0 or first:
             first = False
