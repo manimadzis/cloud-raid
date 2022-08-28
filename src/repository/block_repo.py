@@ -4,6 +4,7 @@ from typing import Tuple, Generator
 import aiosqlite
 from loguru import logger
 
+import exceptions
 from entities import Block, File
 from network.storage_base import StorageBase, StorageType
 from network.storage_creator import StorageCreator
@@ -102,13 +103,18 @@ class BlockRepo(AbstractRepo):
         file.size = row['size']
         return file
 
-    async def get_file_by_filename(self, file: File) -> File:
+    async def get_file_by_filename(self, filename: str) -> File:
         cur = await self.execute('SELECT id, size '
                                  'FROM files '
-                                 'WHERE filename = ?', (file.filename,))
+                                 'WHERE filename = ?', (filename,))
         row = await cur.fetchone()
+        if not row:
+            raise exceptions.UnknownFIle()
+
+        file = File()
         file.id = row['id']
         file.size = row['size']
+        file.filename = filename
         return file
 
     async def get_disk_by_id(self, id_: int) -> StorageBase:
@@ -118,12 +124,12 @@ class BlockRepo(AbstractRepo):
         row = await cur.fetchone()
         type_ = StorageType.from_str(row['type'])
         storage = StorageCreator.create(type_)
-        storage.id= id_
+        storage.id = id_
         storage.token = row['token']
         storage.type = type_
         return storage
 
-    async def get_blocks(self, file: File) -> Tuple[Block]:
+    async def get_blocks_by_file(self, file: File) -> Tuple[Block]:
         cur = await self.execute('SELECT id, number, name, storage_id, file_id '
                                  'FROM blocks '
                                  'WHERE file_id = ? '
@@ -165,4 +171,13 @@ class BlockRepo(AbstractRepo):
         storage.token = row['token']
 
         return storage
+
+    async def del_block(self, block: Block):
+        cur = await self.execute('DELETE FROM blocks '
+                                 'WHERE name = ?', (block.name,))
+
+    async def del_file(self, file: File):
+        cur = await self.execute('DELETE FROM files '
+                                 'WHERE filename = ?', (file.filename,))
+
 

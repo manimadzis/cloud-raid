@@ -7,6 +7,7 @@ import aiosqlite
 from loguru import logger
 
 import entities
+import exceptions
 from cli.parser import Parser
 from config import Config
 from exceptions import *
@@ -30,9 +31,7 @@ class CLI:
 
     async def init(self):
         self._block_repo = await BlockRepo(self._config.db_path)
-        disks = await self._block_repo.get_storages()
-        self._balancer = Balancer(disks, min_block_size=self._config.min_block_size,
-                                  max_block_size=self._config.max_block_size)
+        self._storages = await self._block_repo.get_storages()
 
     @staticmethod
     def _replace_line(s: str):
@@ -42,6 +41,7 @@ class CLI:
         self._parser.set_upload_handler(self._upload_handler)
         self._parser.set_download_handler(self._download_handler)
         self._parser.set_list_handler(self._list_handler)
+        self._parser.set_delete_handler(self._delete_handler)
 
         self._parser.set_storage_add_handler(self._storage_add_handler)
         self._parser.set_storage_list_handler(self._storage_list_handler)
@@ -56,18 +56,26 @@ class CLI:
             _, dst = os.path.split(src)
 
         block_size = args.block_size
-        file = entities.File(filename=dst, path=src, block_size=block_size)
+
+        self._balancer = Balancer(self._storages, min_block_size=self._config.min_block_size,
+                                  max_block_size=self._config.max_block_size, block_size=block_size)
+
+        file = entities.File(filename=dst, path=src)
 
         print(f"Upload file {repr(src)} like {repr(dst)}")
 
         try:
             await self._upload_file(file)
         except NoStorage as e:
-            print("No disks. Add one by addstore command")
+            print("No disks. Add one by 'store add' command")
             logger.exception(e)
             return
         except FileAlreadyExists as e:
             print("File with this name already exists")
+            logger.exception(e)
+            return
+        except CancelAction as e:
+            print()
             logger.exception(e)
             return
 
@@ -115,7 +123,7 @@ class CLI:
             files = await storage.files(session)
 
         for file in files:
-            print(file.filename)
+            print(file.filename, self._size2human(file.size))
 
     async def _storage_list_handler(self, args: argparse.Action):
         async with aiohttp.ClientSession() as s:
@@ -147,18 +155,56 @@ class CLI:
         tasks = []
         async with aiohttp.ClientSession() as session:
             for filename in filenames:
-                tasks.append(asyncio.create_task(self._delete_file(storage, filename, session)))
+                tasks.append(asyncio.create_task(self._delete_block(storage, filename, session)))
             await asyncio.gather(*tasks)
+
+    async def _delete_handler(self, args: argparse.Action):
+        filenames = args.filenames
+
+
+
+        files = []
+        tasks = []
+        for filename in filenames:
+            question = f"File {filename} will be deleted. Are you sure you want to load it?[y/n]"
+            if not self._yes_or_no(question):
+                continue
+            tasks.append(asyncio.create_task(self._block_repo.get_file_by_filename(filename)))
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        for task in tasks:
+            try:
+                files.append(task.result())
+            except exceptions.UnknownFIle as e:
+                print("Unknown file")
+                logger.exception(e)
+                return
+
+        for file in files:
+            await self._delete_file(file)
 
     # OTHER
 
-    @staticmethod
-    async def _delete_file(storage: StorageBase, filename: str, session: aiohttp.ClientSession):
-        status = await storage.delete(filename, session)
+    async def _delete_block(self, storage: StorageBase, name: str, session: aiohttp.ClientSession):
+        status = await storage.delete(name, session)
         if status == DeleteStatus.OK:
-            print(f"{filename} deleted")
+            print(f"Block {name} on storage #{storage.id} deleted")
+            await self._block_repo.del_block(entities.Block(name=name, storage=storage))
         else:
-            print(f"Failed to delete {filename}")
+            print(f"Failed to delete block {name}")
+
+    async def _delete_file(self, file: entities.File):
+        blocks = await self._block_repo.get_blocks_by_file(file)
+
+        async with aiohttp.ClientSession() as session:
+            tasks = []
+            for block in blocks:
+                tasks.append(asyncio.create_task(self._delete_block(block.storage, block.name, session)))
+            await asyncio.gather(*tasks)
+        await self._block_repo.del_file(file)
+        await self._block_repo.commit()
+        print(f"File {file.filename} deleted")
+
 
     async def _list_handler(self, args: argparse.Action):
         self._vfs = VFS(self._block_repo)
@@ -178,9 +224,14 @@ class CLI:
         size /= 1024
         return "{:.1f}GB".format(size)
 
+    @staticmethod
+    def _yes_or_no(s: str) -> bool:
+        print(s)
+        return input().startswith("y")
+
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
         async with Downloader(self._block_repo) as downloader:
-            file = await self._block_repo.get_file_by_filename(entities.File(filename=src))
+            file = await self._block_repo.get_file_by_filename(src)
             file.path = dst
 
             total_count = await downloader.count_blocks(file)
@@ -192,6 +243,11 @@ class CLI:
         async with Uploader(self._balancer, self._block_repo) as u:
             total_blocks = u.count_blocks(file)
             file.size = os.path.getsize(file.path)
+
+            question = f"File {file.filename} split into {total_blocks} {self._size2human(file.block_size)} blocks. Are you sure you want to load it?[y/n]"
+            if not self._yes_or_no(question):
+                raise exceptions.CancelAction()
+
             self._replace_line(f"0/{total_blocks} blocks uploaded")
             try:
                 async for done in u.upload_file(file):
@@ -199,6 +255,8 @@ class CLI:
             except Exception as e:
                 logger.exception(e)
                 raise
+            finally:
+                print()
 
     def _parse(self):
         return self._parser.parse_args()

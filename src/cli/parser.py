@@ -19,7 +19,7 @@ class Parser(argparse.ArgumentParser):
         self._upload.add_argument("src", help="Path to file")
         self._upload.add_argument("dst", help="Filename in system", nargs='?', default="")
         self._upload.add_argument("-b", "--block-size", help="Size of block in bytes", type=int,
-                                  default=File.block_size)
+                                  default=None, dest="block_size")
 
         # DOWNLOAD
         self._download = subparsers.add_parser("download", help="Download file")
@@ -48,6 +48,10 @@ class Parser(argparse.ArgumentParser):
         # LIST
         self._list = subparsers.add_parser("list", help="Show list of files")
 
+        # DELETE
+        self._delete = subparsers.add_parser("delete", help="Delete file")
+        self._delete.add_argument("filenames", nargs="+")
+
     def set_upload_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._upload.set_defaults(func=func)
 
@@ -68,3 +72,7 @@ class Parser(argparse.ArgumentParser):
 
     def set_storage_delete_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._storage_delete.set_defaults(func=func)
+
+    def set_delete_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._delete.set_defaults(func=func)
+

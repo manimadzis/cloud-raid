@@ -18,7 +18,7 @@ async def main():
 
     config: Config = Config()
 
-    if args.config:
+    if args.config_path:
         try:
             config = Config.load(args.config_path)
         except Exception as e:

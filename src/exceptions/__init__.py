@@ -8,3 +8,9 @@ class NoStorage(Error):
 
 class FileAlreadyExists(Error):
     pass
+
+class CancelAction(Error):
+    pass
+
+class UnknownFIle(Error):
+    pass

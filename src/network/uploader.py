@@ -20,7 +20,7 @@ class Uploader:
 
     async def _upload_block(self, block: entities.Block) -> Tuple[UploadStatus, entities.Block]:
         status = await block.storage.upload(block.name, block.data, self._session)
-        # status = UploadStatus.OK
+
         if status == UploadStatus.OK:
             logger.info(f"Upload block: {block}")
         else:

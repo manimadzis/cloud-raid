@@ -11,7 +11,7 @@ class File:
     size: int = 0
 
     # setting
-    block_size: int = int(2 * 2 ** 20)
+    block_size: int = 0
     duplicate_count: int = 1
     worker_count: int = 10
 

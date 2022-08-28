@@ -41,12 +41,12 @@ class Downloader:
                 f.write(data)
 
     async def count_blocks(self, file: entities.File) -> int:
-        blocks = await self._block_repo.get_blocks(file)
+        blocks = await self._block_repo.get_blocks_by_file(file)
         return len(blocks)
 
     async def download_file(self, file: entities.File, temp_dir: str = "") -> None:
         tasks: List[asyncio.Task] = []
-        blocks = await self._block_repo.get_blocks(file)
+        blocks = await self._block_repo.get_blocks_by_file(file)
 
         index = 0
         blocks_count = 0
