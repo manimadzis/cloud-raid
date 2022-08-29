@@ -19,7 +19,7 @@ class Parser(argparse.ArgumentParser):
         self._upload.add_argument("src", help="Path to file")
         self._upload.add_argument("dst", help="Filename in system", nargs='?', default="")
         self._upload.add_argument("-b", "--block-size", help="Size of block in bytes", type=int,
-                                  default=None, dest="block_size")
+                                  default=0, dest="block_size")
 
         self._upload.add_argument("-c", "--cipher", action="store_true")
 

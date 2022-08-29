@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+from typing import List, Callable, Any
 
 import aiohttp
 import aiosqlite
@@ -19,7 +20,7 @@ from network.storage_creator import StorageCreator
 from network.uploader import Uploader
 from repository.block_repo import BlockRepo
 from vfs import VFS
-
+from tqdm.asyncio import tqdm
 
 class CLI:
     def __init__(self, config: Config, parser: Parser):
@@ -93,7 +94,7 @@ class CLI:
             logger.exception(e)
             return
 
-        print("\nFile successfully uploaded")
+        print("File successfully uploaded")
 
     async def _download_handler(self, args: argparse.Action):
         src, dst = args.src, args.dst
@@ -149,16 +150,16 @@ class CLI:
             total_space = self._size2human(storage.total_space)
 
             print("{id} {type}, {used_space}/{total_space}".format(
-                id=storage.id,
-                type=storage.type,
-                used_space=used_space,
-                total_space=total_space,
+                    id=storage.id,
+                    type=storage.type,
+                    used_space=used_space,
+                    total_space=total_space,
             ))
 
     async def _list_handler(self, args: argparse.Action):
         self._vfs = VFS(self._block_repo)
         await self._vfs.load()
-        print(repr(self._vfs.tree()))
+        print(self._vfs.tree())
 
     async def _storage_delete_handler(self, args: argparse.Action):
         storage_id = args.storage_id
@@ -250,6 +251,48 @@ class CLI:
         print(s)
         return input().startswith("y")
 
+    @staticmethod
+    def _progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=80, fill='█', end="\n"):
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            suffix      - Optional  : suffix string (Str)
+            decimals    - Optional  : positive number of decimals in percent complete (Int)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+        """
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + '-' * (length - filledLength)
+        print(f'\r{prefix} |{bar}| {percent}% {suffix}', end=end)
+
+    @staticmethod
+    def _multi_progress_bar(progress: List[List[int]]):
+        if not progress:
+            return
+        logger.info(progress)
+        i = 0
+        for _, (done, _) in enumerate(reversed(progress)):
+            if done != 0:
+                break
+            i += 1
+        logger.info(i)
+        last_started = len(progress) - i - 1
+        if last_started == -1:
+            return
+        logger.info(last_started)
+        for i, (done, total) in enumerate(progress[:last_started], start=1):
+            CLI._progress_bar(done, total=total, prefix=str(i))
+
+        if last_started > 0:
+            done, total = progress[last_started]
+            CLI._progress_bar(done, total=total, prefix=str(last_started + 1), end=("\033[A" * last_started))
+            # CLI._progress_bar(done, total=total, prefix=str(last_started + 1), end="\n" * 3 )
+
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
         async with Downloader(self._block_repo) as downloader:
             file = await self._block_repo.get_file_by_filename(src)
@@ -260,8 +303,15 @@ class CLI:
             async for done in downloader.download_file(file, temp_dir=temp_dir):
                 self._replace_line(f"{done}/{total_count} blocks downloaded")
 
+    @staticmethod
+    async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]):
+        while not task.done():
+            yield func()
+            await asyncio.sleep(period)
+
     async def _upload_file(self, file: entities.File) -> None:
         async with Uploader(self._balancer, self._block_repo) as u:
+            file.block_size = self._balancer.block_size(file)
             total_blocks = u.count_blocks(file)
             file.size = os.path.getsize(file.path)
 
@@ -269,15 +319,16 @@ class CLI:
             if not self._yes_or_no(question):
                 raise exceptions.CancelAction()
 
-            self._replace_line(f"0/{total_blocks} blocks uploaded")
             try:
-                async for done in u.upload_file(file):
-                    self._replace_line(f"{done}/{total_blocks} blocks uploaded")
+                upload_task = asyncio.create_task(u.upload_file(file))
+                async for progress in self._poll_task(0.5, upload_task, lambda: u.progress):
+                    self._multi_progress_bar(progress)
+
             except Exception as e:
                 logger.exception(e)
                 raise
             finally:
-                print()
+                print("\n" * len(u.progress))
 
     def _parse(self):
         return self._parser.parse_args()

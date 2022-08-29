@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Union, Tuple
+from typing import Union, Tuple, Generator, Any, Iterator
 
 import aiohttp
-
+from tqdm.asyncio import tqdm
 import entities
 
 
@@ -50,6 +50,10 @@ class StorageBase(ABC):
 
     @abstractmethod
     async def upload(self, filename: str, data: bytes, session: aiohttp.ClientSession) -> UploadStatus:
+        pass
+
+    @abstractmethod
+    async def upload_by_chunks(self, filename: str, data: Iterator[bytes], session: aiohttp.ClientSession) -> UploadStatus:
         pass
 
     @abstractmethod
