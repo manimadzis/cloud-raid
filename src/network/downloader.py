@@ -1,12 +1,13 @@
 import asyncio
 import os
-from typing import List, Tuple, Iterable
+from typing import List, Tuple, Iterable, Optional
 
 import aiohttp
 from loguru import logger
 
 import entities
 import repository
+from crypto import CipherBase
 from .storage_base import DownloadStatus
 
 
@@ -24,6 +25,10 @@ class Downloader:
 
     async def _download_block(self, block: entities.Block) -> Tuple[DownloadStatus, entities.Block]:
         status, data = await block.storage.download(block.name, self._session)
+
+        if block.cipher:
+            data = block.cipher.decrypt(data)
+
         block.data = data
         if status == DownloadStatus.OK:
             logger.info(f"Download block: {block}")

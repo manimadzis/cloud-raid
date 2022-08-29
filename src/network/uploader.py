@@ -1,5 +1,5 @@
 import asyncio
-from typing import Iterator, Tuple, List
+from typing import Iterator, Tuple, List, Optional
 
 import aiohttp
 import aiosqlite
@@ -19,6 +19,9 @@ class Uploader:
         self._session = None
 
     async def _upload_block(self, block: entities.Block) -> Tuple[UploadStatus, entities.Block]:
+        if block.cipher:
+            block.data = block.cipher.encrypt(block.data)
+
         status = await block.storage.upload(block.name, block.data, self._session)
 
         if status == UploadStatus.OK:
@@ -83,8 +86,7 @@ class Uploader:
                     tasks.append(asyncio.create_task(self._upload_block(block)))
                 else:
                     done_tasks += 1
-
-                await self._blocks_repo.add_block(block)
+                    await self._blocks_repo.add_block(block)
             yield done_tasks
 
         await self._blocks_repo.commit()

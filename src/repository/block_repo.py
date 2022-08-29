@@ -1,11 +1,11 @@
-import asyncio
 from typing import Tuple, Generator
 
 import aiosqlite
 from loguru import logger
 
 import exceptions
-from entities import Block, File
+from crypto.aes import Aes
+from entities import Block, File, Key
 from network.storage_base import StorageBase, StorageType
 from network.storage_creator import StorageCreator
 from repository.abstract_repo import AbstractRepo
@@ -28,18 +28,29 @@ class BlockRepo(AbstractRepo):
         size INT NOT NULL);
         """)
 
+        await self.execute("""CREATE TABLE IF NOT EXISTS keys(
+        id INTEGER PRIMARY KEY,
+        key STRING NOT NULL UNIQUE);
+        """)
+
         await self.execute("""CREATE TABLE IF NOT EXISTS blocks(
         id INTEGER PRIMARY KEY,
         storage_id INTEGER NOT NULL,
         file_id INTEGER NOT NULL,
+        key_id INTEGER,
         number INTEGER NOT NULL,
         name STRING NOT NULL,
         FOREIGN KEY (storage_id) REFERENCES storages(id),
+        FOREIGN KEY (key_id) REFERENCES keys(id),
         FOREIGN KEY (file_id) REFERENCES files(id));
         """)
 
     async def add_block(self, block: Block) -> None:
+        key_id = None
+        if block.cipher:
+            key_id = block.cipher.key().id
         cur = await self.add_row('blocks', {
+            'key_id': key_id,
             'storage_id': block.storage.id,
             'file_id': block.file.id,
             'name': block.name,
@@ -53,7 +64,7 @@ class BlockRepo(AbstractRepo):
             'type': str(disk.type)
         })
 
-    async def add_file(self, file: File):
+    async def add_file(self, file: File) -> None:
         cur = await self.add_row('files', {
             'size': file.size,
             'filename': file.filename,
@@ -117,45 +128,47 @@ class BlockRepo(AbstractRepo):
         file.filename = filename
         return file
 
-    async def get_disk_by_id(self, id_: int) -> StorageBase:
-        cur = await self.execute('SELECT token, type '
-                                 'FROM storages '
-                                 'WHERE id = ?', (id_,))
-        row = await cur.fetchone()
-        type_ = StorageType.from_str(row['type'])
-        storage = StorageCreator.create(type_)
-        storage.id = id_
-        storage.token = row['token']
-        storage.type = type_
-        return storage
-
     async def get_blocks_by_file(self, file: File) -> Tuple[Block]:
-        cur = await self.execute('SELECT id, number, name, storage_id, file_id '
-                                 'FROM blocks '
-                                 'WHERE file_id = ? '
-                                 'ORDER BY number', (file.id,))
+        """
+
+
+        :param file:
+        :return:
+        """
+        query = """
+        SELECT
+            b.id id,
+            number,
+            name,
+            type,
+            token,
+            "key",
+            key_id,
+            storage_id
+        FROM
+            blocks b
+            JOIN storages s ON b.storage_id = s.id
+            JOIN keys k ON b.key_id = k.id
+        WHERE
+            b.file_id = ?
+        ORDER BY number
+        """
+
+        cur = await self.execute(query, (file.id,))
         blocks = []
-        storage_ids = []
         async for row in cur:
+            type_ = StorageType.from_str(row['type'])
+            storage = StorageCreator.create(type_)
+            storage.token = row['token']
+            key = Key(id=row['key_id'], key=str(row['key']))
+            cipher = Aes(key)
             blocks.append(Block(number=row['number'],
                                 name=row['name'],
-                                id=row['id']))
-            storage_ids.append(row['storage_id'])
-
-        storages = {}
-        tasks = []
-
-        storage_ids_set = set(storage_ids)
-        for storage_id in storage_ids_set:
-            tasks.append(asyncio.create_task(self.get_disk_by_id(storage_id)))
-        await asyncio.gather(*tasks)
-
-        for task, storage_id in zip(tasks, storage_ids_set):
-            storages[storage_id] = task.result()
-
-        for block, storage_id in zip(blocks, storage_ids):
-            block.storage = storages[storage_id]
-            block.file = file
+                                id=row['id'],
+                                storage=storage,
+                                cipher=cipher,
+                                file=file
+                                ))
 
         return tuple(blocks)
 
@@ -180,4 +193,17 @@ class BlockRepo(AbstractRepo):
         cur = await self.execute('DELETE FROM files '
                                  'WHERE filename = ?', (file.filename,))
 
+    async def add_key(self, key: Key) -> None:
+        cur = await self.add_row('keys', {
+            'key': key.key
+        })
+        key.id = cur.lastrowid
 
+    async def get_keys(self) -> Tuple[Key]:
+        cur = await self.execute('SELECT id, key '
+                                 'FROM keys')
+        keys = []
+        async for row in cur:
+            keys.append(Key(id=row['id'],
+                            key=str(row['key'])))
+        return tuple(keys)

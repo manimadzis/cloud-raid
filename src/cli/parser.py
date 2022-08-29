@@ -21,6 +21,8 @@ class Parser(argparse.ArgumentParser):
         self._upload.add_argument("-b", "--block-size", help="Size of block in bytes", type=int,
                                   default=None, dest="block_size")
 
+        self._upload.add_argument("-c", "--cipher", action="store_true")
+
         # DOWNLOAD
         self._download = subparsers.add_parser("download", help="Download file")
 
@@ -52,6 +54,14 @@ class Parser(argparse.ArgumentParser):
         self._delete = subparsers.add_parser("delete", help="Delete file")
         self._delete.add_argument("filenames", nargs="+")
 
+        # KEY ADD/LIST
+        self._key = subparsers.add_parser("key", help="Key options")
+        key_subparsers = self._key.add_subparsers()
+        self._key_add = key_subparsers.add_parser("add", help="Add new key")
+        self._key_list = key_subparsers.add_parser("list", help="List keys")
+
+        self._key_add.add_argument("key", help="New key")
+
     def set_upload_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._upload.set_defaults(func=func)
 
@@ -75,4 +85,13 @@ class Parser(argparse.ArgumentParser):
 
     def set_delete_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._delete.set_defaults(func=func)
+
+    def set_key_add_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._key_add.set_defaults(func=func)
+
+    def set_key_list_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._key_list.set_defaults(func=func)
+
+
+
 

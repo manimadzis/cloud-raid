@@ -1,28 +1,36 @@
 import heapq
 import os
 import uuid
-from typing import Tuple, Sequence
+from typing import Tuple, Iterable
 
 import entities
 import exceptions
+from crypto import CipherBase
 from .storage_base import StorageBase
 
 
 class Balancer:
-    def __init__(self, disks: Sequence[StorageBase],
+    def __init__(self, storages: Iterable[StorageBase],
+                 ciphers: Iterable[CipherBase] = tuple(),
                  min_block_size=1 * 2 ** 20,
                  max_block_size=5 * 2 ** 20,
-                 block_size=None):
+                 block_size=None,
+                 ):
         self._min_block_size = min_block_size
         self._max_block_size = max_block_size
         self._block_size = block_size
-        self._disks = tuple(disks)
-        self._queue = list(disks)
+        self._ciphers = tuple(ciphers) or None
+        self._storages = tuple(storages)
+        self._queue = list(storages)
 
         heapq.heapify(self._queue)
 
+    def _cipher(self) -> CipherBase:
+        if self._ciphers:
+            return self._ciphers[0]
+
     def storages(self, count: int) -> Tuple[StorageBase]:
-        if not self._disks:
+        if not self._storages:
             raise exceptions.NoStorage()
 
         if count > len(self._queue):
@@ -54,4 +62,5 @@ class Balancer:
     def fill_block(self, block: entities.Block) -> entities.Block:
         block.storage = self.storages(1)[0]
         block.name = str(uuid.uuid4())
+        block.cipher = self._cipher()
         return block

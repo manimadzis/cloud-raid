@@ -10,6 +10,7 @@ import entities
 import exceptions
 from cli.parser import Parser
 from config import Config
+from crypto.aes import Aes
 from exceptions import *
 from network.balancer import Balancer
 from network.downloader import Downloader
@@ -31,7 +32,6 @@ class CLI:
 
     async def init(self):
         self._block_repo = await BlockRepo(self._config.db_path)
-        self._storages = await self._block_repo.get_storages()
 
     @staticmethod
     def _replace_line(s: str):
@@ -48,16 +48,30 @@ class CLI:
         self._parser.set_storage_files_handler(self._storage_files_handler)
         self._parser.set_storage_delete_handler(self._storage_delete_handler)
 
+        self._parser.set_key_add_handler(self._key_add_handler)
+        self._parser.set_key_list_handler(self._key_list_handler)
+
     # HANDLERS
 
     async def _upload_handler(self, args: argparse.Action):
         src, dst = args.src, args.dst
+        block_size = args.block_size
+
         if not dst:
             _, dst = os.path.split(src)
 
-        block_size = args.block_size
+        if args.cipher:
+            keys = await self._block_repo.get_keys()
+            if not keys:
+                print("No keys. Add one by 'key add' or don't use '-c' parameter")
+                return
 
-        self._balancer = Balancer(self._storages, min_block_size=self._config.min_block_size,
+            ciphers = [Aes(key) for key in keys]
+        else:
+            ciphers = []
+
+        storages = await self._block_repo.get_storages()
+        self._balancer = Balancer(storages, ciphers=ciphers, min_block_size=self._config.min_block_size,
                                   max_block_size=self._config.max_block_size, block_size=block_size)
 
         file = entities.File(filename=dst, path=src)
@@ -108,9 +122,9 @@ class CLI:
 
         try:
             await self._block_repo.add_storage(storage)
-            print(f"Token {token} added")
+            print(f"Storage {type_} {token} added")
         except aiosqlite.IntegrityError as e:
-            print(f"Token {token} already exists")
+            print(f"Storage {type_} {token} already exists")
             logger.exception(e)
 
         await self._block_repo.commit()
@@ -143,9 +157,8 @@ class CLI:
 
     async def _list_handler(self, args: argparse.Action):
         self._vfs = VFS(self._block_repo)
-
         await self._vfs.load()
-        self._vfs.tree()
+        print(repr(self._vfs.tree()))
 
     async def _storage_delete_handler(self, args: argparse.Action):
         storage_id = args.storage_id
@@ -160,8 +173,6 @@ class CLI:
 
     async def _delete_handler(self, args: argparse.Action):
         filenames = args.filenames
-
-
 
         files = []
         tasks = []
@@ -182,6 +193,22 @@ class CLI:
 
         for file in files:
             await self._delete_file(file)
+
+    async def _key_add_handler(self, args: argparse.Action):
+        key = args.key
+
+        try:
+            await self._block_repo.add_key(entities.Key(key=key))
+            await self._block_repo.commit()
+        except aiosqlite.IntegrityError:
+            print("This key already exists")
+            return
+        print("Key successfully added")
+
+    async def _key_list_handler(self, args: argparse.Action):
+        keys = await self._block_repo.get_keys()
+        for key in keys:
+            print("{id} {key}".format(id=key.id, key=key.key))
 
     # OTHER
 
@@ -204,12 +231,6 @@ class CLI:
         await self._block_repo.del_file(file)
         await self._block_repo.commit()
         print(f"File {file.filename} deleted")
-
-
-    async def _list_handler(self, args: argparse.Action):
-        self._vfs = VFS(self._block_repo)
-        await self._vfs.load()
-        self._vfs.tree()
 
     @staticmethod
     def _size2human(size: int):

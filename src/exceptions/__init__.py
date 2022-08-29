@@ -14,3 +14,6 @@ class CancelAction(Error):
 
 class UnknownFIle(Error):
     pass
+
+class KeyAlreadyExists(Error):
+    pass
