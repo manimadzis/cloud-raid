@@ -1,20 +1,22 @@
 import asyncio
+import math
 import os
-from typing import List, Tuple, Iterable, Optional
+from typing import List, Tuple, Iterable
 
 import aiohttp
 from loguru import logger
 
 import entities
 import repository
-from crypto import CipherBase
 from .storage_base import DownloadStatus
 
 
 class Downloader:
-    def __init__(self, block_repo: repository.BlockRepo):
+    def __init__(self, block_repo: repository.BlockRepo, chunk_size: int = 64 * 2 ** 10):
         self._block_repo = block_repo
         self._session = None
+        self._progress: List[List[int]] = []
+        self._chunk_size = chunk_size
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession()
@@ -25,6 +27,23 @@ class Downloader:
 
     async def _download_block(self, block: entities.Block) -> Tuple[DownloadStatus, entities.Block]:
         status, data = await block.storage.download(block.name, self._session)
+
+        if block.cipher:
+            data = block.cipher.decrypt(data)
+
+        block.data = data
+        if status == DownloadStatus.OK:
+            logger.info(f"Download block: {block}")
+        else:
+            logger.info(f"Failed to download block: {block}: {status}")
+
+        return status, block
+
+    async def _download_block_by_chunks(self, block: entities.Block) -> Tuple[DownloadStatus, entities.Block]:
+        def inc_progress():
+            self._progress[block.number][0] += 1
+
+        status, data = await block.storage.download_by_chunks(block.name, self._chunk_size, inc_progress, self._session)
 
         if block.cipher:
             data = block.cipher.decrypt(data)
@@ -53,6 +72,10 @@ class Downloader:
         tasks: List[asyncio.Task] = []
         blocks = await self._block_repo.get_blocks_by_file(file)
 
+        total = math.ceil(blocks[0].size /self._chunk_size)
+        self._progress = [[0, total] for _ in blocks]
+        self._progress[-1][0] = file.size - blocks[0].size * (len(blocks) - 1)
+
         index = 0
         blocks_count = 0
         while index < len(blocks) or tasks:
@@ -75,5 +98,9 @@ class Downloader:
                     block.save(temp_dir)
                     blocks_count += 1
 
-            yield blocks_count
+            # yield blocks_count
         self._merge_blocks(file.path, blocks, temp_dir)
+
+    @property
+    def progress(self):
+        return self._progress

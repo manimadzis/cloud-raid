@@ -25,7 +25,8 @@ class BlockRepo(AbstractRepo):
         await self.execute("""CREATE TABLE IF NOT EXISTS files(
         id INTEGER PRIMARY KEY,
         filename STRING NOT NULL UNIQUE,
-        size INT NOT NULL);
+        size INT NOT NULL,
+        uploaded_block_count INTEGER NOT NULL);
         """)
 
         await self.execute("""CREATE TABLE IF NOT EXISTS keys(
@@ -35,11 +36,12 @@ class BlockRepo(AbstractRepo):
 
         await self.execute("""CREATE TABLE IF NOT EXISTS blocks(
         id INTEGER PRIMARY KEY,
+        number INTEGER NOT NULL,
+        name STRING NOT NULL,
+        size INTEGER NOT NULL,
         storage_id INTEGER NOT NULL,
         file_id INTEGER NOT NULL,
         key_id INTEGER,
-        number INTEGER NOT NULL,
-        name STRING NOT NULL,
         FOREIGN KEY (storage_id) REFERENCES storages(id),
         FOREIGN KEY (key_id) REFERENCES keys(id),
         FOREIGN KEY (file_id) REFERENCES files(id));
@@ -47,6 +49,8 @@ class BlockRepo(AbstractRepo):
 
     async def add_block(self, block: Block) -> None:
         key_id = None
+        logger.info(block)
+
         if block.cipher:
             key_id = block.cipher.key().id
         cur = await self.add_row('blocks', {
@@ -55,8 +59,13 @@ class BlockRepo(AbstractRepo):
             'file_id': block.file.id,
             'name': block.name,
             'number': block.number,
+            'size': block.size,
         })
         block.id = cur.lastrowid
+
+        cur = await self.execute('UPDATE files '
+                                 'SET uploaded_block_count = uploaded_block_count + 1 '
+                                 'WHERE id = ?', (block.file.id,))
 
     async def add_storage(self, disk: StorageBase) -> None:
         await self.add_row('storages', {
@@ -68,6 +77,7 @@ class BlockRepo(AbstractRepo):
         cur = await self.add_row('files', {
             'size': file.size,
             'filename': file.filename,
+            'uploaded_block_count': file.uploaded_block_count
         })
         file.id = cur.lastrowid
 
@@ -115,16 +125,17 @@ class BlockRepo(AbstractRepo):
         return file
 
     async def get_file_by_filename(self, filename: str) -> File:
-        cur = await self.execute('SELECT id, size '
+        cur = await self.execute('SELECT id, size, uploaded_block_count '
                                  'FROM files '
                                  'WHERE filename = ?', (filename,))
         row = await cur.fetchone()
         if not row:
-            raise exceptions.UnknownFIle()
+            raise exceptions.UnknownFile()
 
         file = File()
         file.id = row['id']
         file.size = row['size']
+        file.uploaded_block_count = row['uploaded_block_count']
         file.filename = filename
         return file
 
@@ -178,6 +189,9 @@ class BlockRepo(AbstractRepo):
                                  'WHERE id = ?', (id_,))
 
         row = await cur.fetchone()
+        if not row:
+            raise exceptions.UnknownStorage()
+
         type_ = StorageType.from_str(row['type'])
         storage = StorageCreator.create(type_)
         storage.id = row['id']

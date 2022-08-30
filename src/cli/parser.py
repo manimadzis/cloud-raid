@@ -1,8 +1,6 @@
 import argparse
 from typing import Callable, Coroutine
 
-from entities import File
-
 
 class Parser(argparse.ArgumentParser):
     def __init__(self):
@@ -11,6 +9,8 @@ class Parser(argparse.ArgumentParser):
         self.add_argument('--config', dest='config_path', default="", help="Path to config file")
         self.add_argument('--debug', action="store_true", help="Enable debug output")
         self.add_argument('--log', help="Path to log file", default="log.txt")
+        self.add_argument('-wc', '--worker-count', help="Count of simultaneous workers (connections)", default=5,
+                          type=int, dest="worker_count")
 
         subparsers = self.add_subparsers(parser_class=argparse.ArgumentParser)
         # UPLOAD
@@ -31,13 +31,14 @@ class Parser(argparse.ArgumentParser):
         self._download.add_argument("--temp-dir", help="Path to temp directory", default="blocks",
                                     dest="temp_dir")
 
-        # STORAGE ADD/LIST/FILES/DELETE
+        # STORAGE ADD/LIST/FILES/DELETE/WIPE
         self._storage = subparsers.add_parser("storage", help="Storage options")
         storage_subparsers = self._storage.add_subparsers(parser_class=argparse.ArgumentParser)
         self._storage_add = storage_subparsers.add_parser("add", help="Add new storage")
         self._storage_list = storage_subparsers.add_parser("list", help="List storages")
         self._storage_files = storage_subparsers.add_parser("files", help="List files on storage")
         self._storage_delete = storage_subparsers.add_parser("delete", help="Delete files from storage")
+        self._storage_wipe = storage_subparsers.add_parser("wipe", help="Wipe storage")
 
         self._storage_add.add_argument("type", help="Type of storage", choices=["yandex-disk"])
         self._storage_add.add_argument("token", help="Authorization token")
@@ -47,6 +48,7 @@ class Parser(argparse.ArgumentParser):
         self._storage_delete.add_argument("storage_id")
         self._storage_delete.add_argument("filenames", nargs="+")
 
+        self._storage_wipe.add_argument("storage_id")
         # LIST
         self._list = subparsers.add_parser("list", help="Show list of files")
 
@@ -83,6 +85,9 @@ class Parser(argparse.ArgumentParser):
     def set_storage_delete_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._storage_delete.set_defaults(func=func)
 
+    def set_storage_wipe_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._storage_wipe.set_defaults(func=func)
+
     def set_delete_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._delete.set_defaults(func=func)
 
@@ -91,7 +96,3 @@ class Parser(argparse.ArgumentParser):
 
     def set_key_list_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._key_list.set_defaults(func=func)
-
-
-
-

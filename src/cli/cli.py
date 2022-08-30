@@ -15,12 +15,12 @@ from crypto.aes import Aes
 from exceptions import *
 from network.balancer import Balancer
 from network.downloader import Downloader
-from network.storage_base import StorageType, StorageBase, DeleteStatus
+from network.storage_base import StorageType, DeleteStatus, DownloadStatus
 from network.storage_creator import StorageCreator
 from network.uploader import Uploader
 from repository.block_repo import BlockRepo
 from vfs import VFS
-from tqdm.asyncio import tqdm
+
 
 class CLI:
     def __init__(self, config: Config, parser: Parser):
@@ -48,6 +48,7 @@ class CLI:
         self._parser.set_storage_list_handler(self._storage_list_handler)
         self._parser.set_storage_files_handler(self._storage_files_handler)
         self._parser.set_storage_delete_handler(self._storage_delete_handler)
+        self._parser.set_storage_wipe_handler(self._storage_wipe_handler)
 
         self._parser.set_key_add_handler(self._key_add_handler)
         self._parser.set_key_list_handler(self._key_list_handler)
@@ -106,7 +107,11 @@ class CLI:
             os.makedirs(temp_dir)
 
         print(f"Start downloading file {repr(src)} to {repr(dst)}")
-        await self._download_file(src, dst, temp_dir)
+        try:
+            await self._download_file(src, dst, temp_dir)
+        except Exception as e:
+            print(e)
+            return
         print(f"\nFile {src} successfully downloaded to {dst}")
 
     async def _storage_add_handler(self, args: argparse.Action):
@@ -135,7 +140,10 @@ class CLI:
 
         async with aiohttp.ClientSession() as session:
             storage = await self._block_repo.get_storage_by_id(storage_id)
-            files = await storage.files(session)
+            status, files = await storage.files(session)
+        if status != DownloadStatus.OK:
+            print("Cannot get files in storage. Something went wrong. Please check log file")
+            return
 
         for file in files:
             print(file.filename, self._size2human(file.size))
@@ -156,10 +164,42 @@ class CLI:
                     total_space=total_space,
             ))
 
-    async def _list_handler(self, args: argparse.Action):
-        self._vfs = VFS(self._block_repo)
-        await self._vfs.load()
-        print(self._vfs.tree())
+    async def _storage_wipe_handler(self, args: argparse.Action):
+        storage_id = args.storage_id
+        worker_count = args.worker_count
+
+        async def worker(queue: asyncio.Queue[entities.Block], session: aiohttp.ClientSession):
+            while not queue.empty():
+                block = await queue.get()
+                await self._delete_block(block, session)
+                queue.task_done()
+
+        if self._yes_or_no("Are you sure you want to wipe ENTIRELY storage? [y/n]"):
+            if not self._yes_or_no("Are you REALLY want to WIPE ENTIRELY storage? [y/n]"):
+                return
+
+        try:
+            storage = await self._block_repo.get_storage_by_id(storage_id)
+        except exceptions.UnknownStorage as e:
+            logger.exception(e)
+            print("Unknown storage id. Use 'storage list' to see all storages")
+            return
+
+        async with aiohttp.ClientSession() as session:
+            status, files = await storage.files(session)
+            if status != DownloadStatus.OK:
+                print("Cannot get files in storage. Something went wrong. Please check log file")
+                return
+
+            queue = asyncio.Queue()
+            for file in files:
+                queue.put_nowait(entities.Block(name=file.filename, storage=storage))
+
+            tasks = []
+            for _ in range(worker_count):
+                tasks.append(asyncio.create_task(worker(queue, session)))
+
+            await queue.join()
 
     async def _storage_delete_handler(self, args: argparse.Action):
         storage_id = args.storage_id
@@ -169,8 +209,14 @@ class CLI:
         tasks = []
         async with aiohttp.ClientSession() as session:
             for filename in filenames:
-                tasks.append(asyncio.create_task(self._delete_block(storage, filename, session)))
+                block = entities.Block(storage=storage, name=filename)
+                tasks.append(asyncio.create_task(self._delete_block(block, session)))
             await asyncio.gather(*tasks)
+
+    async def _list_handler(self, args: argparse.Action):
+        self._vfs = VFS(self._block_repo)
+        await self._vfs.load()
+        print(self._vfs.tree())
 
     async def _delete_handler(self, args: argparse.Action):
         filenames = args.filenames
@@ -187,7 +233,7 @@ class CLI:
         for task in tasks:
             try:
                 files.append(task.result())
-            except exceptions.UnknownFIle as e:
+            except exceptions.UnknownFile as e:
                 print("Unknown file")
                 logger.exception(e)
                 return
@@ -213,13 +259,13 @@ class CLI:
 
     # OTHER
 
-    async def _delete_block(self, storage: StorageBase, name: str, session: aiohttp.ClientSession):
-        status = await storage.delete(name, session)
+    async def _delete_block(self, block: entities.Block, session: aiohttp.ClientSession):
+        status = await block.storage.delete(block.name, session)
         if status == DeleteStatus.OK:
-            print(f"Block {name} on storage #{storage.id} deleted")
-            await self._block_repo.del_block(entities.Block(name=name, storage=storage))
+            print(f"Block {block.name} on storage #{block.storage.id} deleted")
+            await self._block_repo.del_block(entities.Block(name=block.name, storage=block.storage))
         else:
-            print(f"Failed to delete block {name}")
+            print(f"Failed to delete block {block.name}")
 
     async def _delete_file(self, file: entities.File):
         blocks = await self._block_repo.get_blocks_by_file(file)
@@ -227,7 +273,7 @@ class CLI:
         async with aiohttp.ClientSession() as session:
             tasks = []
             for block in blocks:
-                tasks.append(asyncio.create_task(self._delete_block(block.storage, block.name, session)))
+                tasks.append(asyncio.create_task(self._delete_block(block, session)))
             await asyncio.gather(*tasks)
         await self._block_repo.del_file(file)
         await self._block_repo.commit()
@@ -252,7 +298,7 @@ class CLI:
         return input().startswith("y")
 
     @staticmethod
-    def _progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=80, fill='█', end="\n"):
+    def _progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=60, fill='█', end="\n"):
         """
         Call in a loop to create terminal progress bar
         @params:
@@ -274,34 +320,36 @@ class CLI:
     def _multi_progress_bar(progress: List[List[int]]):
         if not progress:
             return
-        logger.info(progress)
+
         i = 0
         for _, (done, _) in enumerate(reversed(progress)):
             if done != 0:
                 break
             i += 1
-        logger.info(i)
+
         last_started = len(progress) - i - 1
         if last_started == -1:
             return
-        logger.info(last_started)
+
         for i, (done, total) in enumerate(progress[:last_started], start=1):
             CLI._progress_bar(done, total=total, prefix=str(i))
 
         if last_started > 0:
             done, total = progress[last_started]
             CLI._progress_bar(done, total=total, prefix=str(last_started + 1), end=("\033[A" * last_started))
-            # CLI._progress_bar(done, total=total, prefix=str(last_started + 1), end="\n" * 3 )
 
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
         async with Downloader(self._block_repo) as downloader:
             file = await self._block_repo.get_file_by_filename(src)
             file.path = dst
 
-            total_count = await downloader.count_blocks(file)
-
-            async for done in downloader.download_file(file, temp_dir=temp_dir):
-                self._replace_line(f"{done}/{total_count} blocks downloaded")
+            try:
+                download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))
+                async for progress in self._poll_task(0.5, download_task, lambda: downloader.progress):
+                    self._multi_progress_bar(progress)
+            except Exception as e:
+                logger.exception(e)
+                print(e)
 
     @staticmethod
     async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]):
@@ -310,25 +358,23 @@ class CLI:
             await asyncio.sleep(period)
 
     async def _upload_file(self, file: entities.File) -> None:
-        async with Uploader(self._balancer, self._block_repo) as u:
+        async with Uploader(self._balancer, self._block_repo) as uploader:
             file.block_size = self._balancer.block_size(file)
-            total_blocks = u.count_blocks(file)
+            file.block_count = uploader.count_blocks(file)
             file.size = os.path.getsize(file.path)
 
-            question = f"File {file.filename} split into {total_blocks} {self._size2human(file.block_size)} blocks. Are you sure you want to load it?[y/n]"
+            question = f"File {file.filename} split into {file.block_count} {self._size2human(file.block_size)} blocks. Are you sure you want to load it?[y/n]"
             if not self._yes_or_no(question):
                 raise exceptions.CancelAction()
 
-            try:
-                upload_task = asyncio.create_task(u.upload_file(file))
-                async for progress in self._poll_task(0.5, upload_task, lambda: u.progress):
-                    self._multi_progress_bar(progress)
+            upload_task = asyncio.create_task(uploader.upload_file(file))
+            async for progress in self._poll_task(0.5, upload_task, lambda: uploader.progress):
+                self._multi_progress_bar(progress)
 
-            except Exception as e:
-                logger.exception(e)
-                raise
-            finally:
-                print("\n" * len(u.progress))
+            print("\n" * len(uploader.progress))
+            exc = upload_task.exception()
+            if exc:
+                raise exc
 
     def _parse(self):
         return self._parser.parse_args()

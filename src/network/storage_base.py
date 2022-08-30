@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Union, Tuple, Generator, Any, Iterator
+from typing import Union, Tuple, Generator, Any, Iterator, Dict, List, Callable
 
 import aiohttp
 from tqdm.asyncio import tqdm
@@ -53,11 +53,15 @@ class StorageBase(ABC):
         pass
 
     @abstractmethod
-    async def upload_by_chunks(self, filename: str, data: Iterator[bytes], session: aiohttp.ClientSession) -> UploadStatus:
+    async def upload_by_chunks(self, filename: str, data: tqdm, session: aiohttp.ClientSession) -> UploadStatus:
         pass
 
     @abstractmethod
     async def download(self, filename: str, session: aiohttp.ClientSession) -> DownloadStatus:
+        pass
+
+    @abstractmethod
+    async def download_by_chunks(self, filename: str, chunk_size: int, inc_progress: Callable[[], None], session: aiohttp.ClientSession) -> Tuple[DownloadStatus, bytes]:
         pass
 
     @abstractmethod
@@ -69,6 +73,5 @@ class StorageBase(ABC):
         pass
 
     @abstractmethod
-    async def files(self, session: aiohttp.ClientSession) -> Tuple[entities.File]:
+    async def files(self, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Tuple[entities.File]]:
         pass
-

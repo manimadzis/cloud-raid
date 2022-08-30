@@ -3,6 +3,8 @@ from abc import ABC, abstractmethod
 import entities
 
 
+
+
 class CipherBase(ABC):
     @abstractmethod
     def encrypt(self, data: bytes) -> bytes:

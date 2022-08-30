@@ -9,13 +9,16 @@ from dataclasses import dataclass, field
 class File:
     id: int = 0
     filename: str = ""
-    path: str = ""
     size: int = 0
+    block_count: int = 0
+    uploaded_block_count: int = 0
+
+    path: str = ""
 
     # setting
     block_size: int = 0
     duplicate_count: int = 1
-    worker_count: int = 10
+    worker_count: int = 5
 
 
 @dataclass(kw_only=True)
@@ -32,6 +35,7 @@ class Block:
     id: int = 0
     name: str = ""
     number: int = 0
+    size: int = 0
 
     file: File = None
     storage: network.storage_base.StorageBase = None

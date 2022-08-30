@@ -12,8 +12,12 @@ class FileAlreadyExists(Error):
 class CancelAction(Error):
     pass
 
-class UnknownFIle(Error):
+class UnknownFile(Error):
     pass
 
 class KeyAlreadyExists(Error):
     pass
+
+class UnknownStorage(Error):
+    pass
+
