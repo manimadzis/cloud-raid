@@ -164,7 +164,7 @@ class BlockRepo(AbstractRepo):
         FROM
             blocks b
             JOIN storages s ON b.storage_id = s.id
-            JOIN keys k ON b.key_id = k.id
+            LEFT JOIN keys k ON b.key_id = k.id
         WHERE
             b.file_id = ?
         ORDER BY number

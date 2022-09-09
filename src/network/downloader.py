@@ -71,8 +71,8 @@ class Downloader:
     async def download_file(self, file: entities.File, temp_dir: str = "") -> None:
         tasks: List[asyncio.Task] = []
         blocks = await self._block_repo.get_blocks_by_file(file)
-
-        total = math.ceil(blocks[0].size /self._chunk_size)
+        logger.info(blocks)
+        total = math.ceil(blocks[0].size / self._chunk_size)
         self._progress = [[0, total] for _ in blocks]
         self._progress[-1][0] = file.size - blocks[0].size * (len(blocks) - 1)
 
@@ -84,21 +84,20 @@ class Downloader:
                     break
                 tasks.append(asyncio.create_task(self._download_block(blocks[index])))
                 index += 1
+            logger.info(tasks)
 
             done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             done_tasks: List[asyncio.Task] = list(done)
             tasks = list(pending)
-
             for task in done_tasks:
                 status, block = task.result()
 
-                if status != DownloadStatus.OK:
-                    tasks.append(asyncio.create_task(self._download_block(blocks[index])))
-                else:
+                if status == DownloadStatus.OK:
                     block.save(temp_dir)
                     blocks_count += 1
+                else:
+                    logger.info(f"Cannot load block: {block}")
 
-            # yield blocks_count
         self._merge_blocks(file.path, blocks, temp_dir)
 
     @property

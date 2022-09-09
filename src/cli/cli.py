@@ -365,13 +365,22 @@ class CLI:
             file = await self._block_repo.get_file_by_filename(src)
             file.path = dst
 
+
+            print(f"File {file.filename} consist of {file.total_blocks} {self._size2human(file.size / file.total_blocks)} blocks")
+
             try:
                 download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))
+                logger.info("Create download task")
                 async for progress in self._poll_task(0.5, download_task, lambda: downloader.progress):
                     self._multi_progress_bar(progress)
             except Exception as e:
                 logger.exception(e)
-                print(e)
+                return
+
+            exc = download_task.exception()
+            if exc:
+                raise exc
+
 
     @staticmethod
     async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]):
