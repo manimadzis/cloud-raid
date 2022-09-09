@@ -100,7 +100,7 @@ class CLI:
             logger.exception(e)
             return
         except CancelAction as e:
-            print()
+            print("Canceled")
             logger.exception(e)
             return
         except Exception as e:
@@ -385,9 +385,14 @@ class CLI:
             file.total_blocks = uploader.count_blocks(file)
             file.size = os.path.getsize(file.path)
 
-            question = f"File {file.filename} split into {file.total_blocks} {self._size2human(file.block_size)} blocks. Are you sure you want to load it?[y/n]"
+            question = f"File {file.filename} split into {file.total_blocks} {self._size2human(file.block_size)} blocks.\nAre you sure you want to load it?[y/n]"
             if not self._yes_or_no(question):
                 raise exceptions.CancelAction()
+
+            db_file = await self._block_repo.get_file_by_filename(file.filename)
+            if db_file.total_blocks != db_file.uploaded_blocks:
+                if not self._yes_or_no(f"File {file.filename} partially loaded ({file.uploaded_blocks}/{file.total_blocks}). Do you want to continue load?[y/n]"):
+                    raise exceptions.CancelAction()
 
             upload_task = asyncio.create_task(uploader.upload_file(file))
             async for progress in self._poll_task(0.5, upload_task, lambda: uploader.progress):

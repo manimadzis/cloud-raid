@@ -64,7 +64,7 @@ class BlockRepo(AbstractRepo):
             'size': block.size,
         })
         block.id = cur.lastrowid
-
+        logger.info(block.file)
         cur = await self.execute('UPDATE files '
                                  'SET uploaded_blocks = uploaded_blocks + 1 '
                                  'WHERE id = ?', (block.file.id,))

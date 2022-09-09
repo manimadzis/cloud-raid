@@ -97,7 +97,10 @@ class Uploader:
                     upload_tasks.append(asyncio.create_task(self._upload_block_by_chunks(block)))
             except StopIteration:
                 pass
+
             logger.info(upload_tasks)
+            logger.info(db_tasks)
+
             if upload_tasks:
                 done, pending = await asyncio.wait(upload_tasks, return_when=asyncio.FIRST_COMPLETED)
 
@@ -111,9 +114,11 @@ class Uploader:
                         db_tasks.append(asyncio.create_task(self._blocks_repo.add_block(block)))
                     else:
                         logger.error(f"Cannot load block {block}")
-
-                db_tasks = [task for task in db_tasks if not task.done()]
                 db_tasks.append(asyncio.create_task(self._blocks_repo.commit()))
+
+            if db_tasks:
+                await asyncio.wait(db_tasks, return_when=asyncio.FIRST_COMPLETED)
+                db_tasks = [task for task in db_tasks if not task.done()]
 
         await self._blocks_repo.commit()
 
