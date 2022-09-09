@@ -1,11 +1,13 @@
 import argparse
 import asyncio
 import os
+import uuid
 from typing import List, Callable, Any
 
 import aiohttp
 import aiosqlite
 from loguru import logger
+from tabulate import tabulate
 
 import entities
 import exceptions
@@ -51,7 +53,10 @@ class CLI:
         self._parser.set_storage_wipe_handler(self._storage_wipe_handler)
 
         self._parser.set_key_add_handler(self._key_add_handler)
+        self._parser.set_key_generate_handler(self._key_generate_handler)
         self._parser.set_key_list_handler(self._key_list_handler)
+
+        self._parser.set_empty_handler(self._empty_handler)
 
     # HANDLERS
 
@@ -61,6 +66,10 @@ class CLI:
 
         if not dst:
             _, dst = os.path.split(src)
+
+        if not os.path.isfile(src):
+            print(f"Cannot open file {src}")
+            return
 
         if args.cipher:
             keys = await self._block_repo.get_keys()
@@ -78,12 +87,12 @@ class CLI:
 
         file = entities.File(filename=dst, path=src)
 
-        print(f"Upload file {repr(src)} like {repr(dst)}")
+        print(f"Upload file {repr(src)} like {repr(dst)}\n")
 
         try:
             await self._upload_file(file)
         except NoStorage as e:
-            print("No disks. Add one by 'store add' command")
+            print("No disks. Add one by 'storage add' command")
             logger.exception(e)
             return
         except FileAlreadyExists as e:
@@ -93,6 +102,11 @@ class CLI:
         except CancelAction as e:
             print()
             logger.exception(e)
+            return
+        except Exception as e:
+            logger.exception(e)
+            print(e)
+            print("Exit")
             return
 
         print("File successfully uploaded")
@@ -151,18 +165,14 @@ class CLI:
     async def _storage_list_handler(self, args: argparse.Action):
         async with aiohttp.ClientSession() as s:
             storages = await self._block_repo.get_storages()
+
             for storage in storages:
                 storage.used_space, storage.total_space = await storage.size(s)
 
-            used_space = self._size2human(storage.used_space)
-            total_space = self._size2human(storage.total_space)
-
-            print("{id} {type}, {used_space}/{total_space}".format(
-                    id=storage.id,
-                    type=storage.type,
-                    used_space=used_space,
-                    total_space=total_space,
-            ))
+            print(tabulate([(storage.id,
+                             storage.type,
+                             f"{self._size2human(storage.used_space)}/{self._size2human(storage.total_space)}")
+                            for storage in storages], headers=["id", "type", "space"]))
 
     async def _storage_wipe_handler(self, args: argparse.Action):
         storage_id = args.storage_id
@@ -216,6 +226,7 @@ class CLI:
     async def _list_handler(self, args: argparse.Action):
         self._vfs = VFS(self._block_repo)
         await self._vfs.load()
+        await asyncio.sleep(2)
         print(self._vfs.tree())
 
     async def _delete_handler(self, args: argparse.Action):
@@ -252,10 +263,21 @@ class CLI:
             return
         print("Key successfully added")
 
+    async def _key_generate_handler(self, args: argparse.Action):
+        key = uuid.uuid4().hex
+        await self._block_repo.add_key(entities.Key(key=key))
+        await self._block_repo.commit()
+        print("Key successfully added")
+
     async def _key_list_handler(self, args: argparse.Action):
         keys = await self._block_repo.get_keys()
+        table = []
         for key in keys:
-            print("{id} {key}".format(id=key.id, key=key.key))
+            table.append((key.id, key.key))
+        print(tabulate(table, headers=["id", "key"]))
+
+    async def _empty_handler(self, args: argparse.Action):
+        print("No params")
 
     # OTHER
 
@@ -360,10 +382,10 @@ class CLI:
     async def _upload_file(self, file: entities.File) -> None:
         async with Uploader(self._balancer, self._block_repo) as uploader:
             file.block_size = self._balancer.block_size(file)
-            file.block_count = uploader.count_blocks(file)
+            file.total_blocks = uploader.count_blocks(file)
             file.size = os.path.getsize(file.path)
 
-            question = f"File {file.filename} split into {file.block_count} {self._size2human(file.block_size)} blocks. Are you sure you want to load it?[y/n]"
+            question = f"File {file.filename} split into {file.total_blocks} {self._size2human(file.block_size)} blocks. Are you sure you want to load it?[y/n]"
             if not self._yes_or_no(question):
                 raise exceptions.CancelAction()
 
@@ -382,4 +404,6 @@ class CLI:
     async def start(self):
         args = self._parse()
         await args.func(args)
+
+    async def close(self):
         await self._block_repo.close()

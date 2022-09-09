@@ -15,6 +15,7 @@ class BlockRepo(AbstractRepo):
     def __await__(self) -> Generator[None, None, "BlockRepo"]:
         return self._ainit().__await__()
 
+
     async def _create_tables(self) -> None:
         await self.execute("""CREATE TABLE IF NOT EXISTS storages(
         id INTEGER PRIMARY KEY,
@@ -26,7 +27,8 @@ class BlockRepo(AbstractRepo):
         id INTEGER PRIMARY KEY,
         filename STRING NOT NULL UNIQUE,
         size INT NOT NULL,
-        uploaded_block_count INTEGER NOT NULL);
+        uploaded_blocks INTEGER NOT NULL,
+        total_blocks INTEGER NOT NULL);
         """)
 
         await self.execute("""CREATE TABLE IF NOT EXISTS keys(
@@ -64,8 +66,9 @@ class BlockRepo(AbstractRepo):
         block.id = cur.lastrowid
 
         cur = await self.execute('UPDATE files '
-                                 'SET uploaded_block_count = uploaded_block_count + 1 '
+                                 'SET uploaded_blocks = uploaded_blocks + 1 '
                                  'WHERE id = ?', (block.file.id,))
+
 
     async def add_storage(self, disk: StorageBase) -> None:
         await self.add_row('storages', {
@@ -77,7 +80,8 @@ class BlockRepo(AbstractRepo):
         cur = await self.add_row('files', {
             'size': file.size,
             'filename': file.filename,
-            'uploaded_block_count': file.uploaded_block_count
+            'uploaded_blocks': file.uploaded_blocks,
+            'total_blocks': file.total_blocks,
         })
         file.id = cur.lastrowid
 
@@ -125,7 +129,7 @@ class BlockRepo(AbstractRepo):
         return file
 
     async def get_file_by_filename(self, filename: str) -> File:
-        cur = await self.execute('SELECT id, size, uploaded_block_count '
+        cur = await self.execute('SELECT id, size, uploaded_blocks, total_blocks '
                                  'FROM files '
                                  'WHERE filename = ?', (filename,))
         row = await cur.fetchone()
@@ -135,7 +139,8 @@ class BlockRepo(AbstractRepo):
         file = File()
         file.id = row['id']
         file.size = row['size']
-        file.uploaded_block_count = row['uploaded_block_count']
+        file.uploaded_blocks = row['uploaded_blocks']
+        file.total_blocks = row['total_blocks']
         file.filename = filename
         return file
 

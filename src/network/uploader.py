@@ -131,9 +131,7 @@ class Uploader:
             await self._blocks_repo.commit()
         else:
             file.id = db_file.id
-            logger.info(file.block_size)
-            logger.info(file.uploaded_block_count)
-            if file.block_count == db_file.uploaded_block_count:
+            if file.total_blocks == db_file.uploaded_blocks:
                 raise exceptions.FileAlreadyExists()
             uploaded_blocks = await self._blocks_repo.get_blocks_by_file(file)
 

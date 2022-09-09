@@ -42,7 +42,7 @@ class YandexDisk(StorageBase):
                 async with session.put(put_url, data=data) as resp:
                     if resp.status != 201:
                         return UploadStatus.FAILED
-        except aiohttp.ClientError as e:
+        except aiohttp.ClientConnectionError as e:
             logger.exception(e)
             return UploadStatus.FAILED
 
@@ -78,7 +78,7 @@ class YandexDisk(StorageBase):
                 async with session.put(put_url, data=data) as resp:
                     if resp.status != 201:
                         return UploadStatus.FAILED
-        except aiohttp.ClientError as e:
+        except aiohttp.ClientConnectionError as e:
             logger.exception(e)
             return UploadStatus.FAILED
 
@@ -94,22 +94,25 @@ class YandexDisk(StorageBase):
         params = {
             'path': filename
         }
+        try:
+            async with session.get('https://cloud-api.yandex.net/v1/disk/resources/download', headers=headers,
+                                   params=params) as resp:
+                if resp.status == 200:
+                    json_data = await resp.json()
+                    download_url = json_data.get('href', '')
+                else:
+                    logger.error(f"Bad download response. Code: {resp.status}")
+                    return DownloadStatus.FAILED, bytes()
 
-        async with session.get('https://cloud-api.yandex.net/v1/disk/resources/download', headers=headers,
-                               params=params) as resp:
-            if resp.status == 200:
-                json_data = await resp.json()
-                download_url = json_data.get('href', '')
-            else:
-                logger.error(f"Bad download response. Code: {resp.status}")
-                return DownloadStatus.FAILED, bytes()
-
-        async with session.get(download_url) as resp:
-            if resp.status == 200:
-                content = await resp.read()
-            else:
-                logger.error(f"Failed to download file. Code: {resp.status}")
-                return DownloadStatus.FAILED, bytes()
+            async with session.get(download_url) as resp:
+                if resp.status == 200:
+                    content = await resp.read()
+                else:
+                    logger.error(f"Failed to download file. Code: {resp.status}")
+                    return DownloadStatus.FAILED, bytes()
+        except aiohttp.ClientConnectionError as e:
+            logger.exception(e)
+            return DownloadStatus.FAILED, bytes()
 
         return DownloadStatus.OK, content
 
@@ -125,27 +128,31 @@ class YandexDisk(StorageBase):
             'path': filename
         }
 
-        async with session.get('https://cloud-api.yandex.net/v1/disk/resources/download', headers=headers,
-                               params=params) as resp:
-            async for _ in resp.content.iter_chunked(chunk_size):
-                inc_progress()
-            if resp.status == 200:
-                json_data = await resp.json()
-                download_url = json_data.get('href', '')
-            else:
-                logger.error(f"Bad download response. Code: {resp.status}")
-                return DownloadStatus.FAILED, bytes()
+        try:
+            async with session.get('https://cloud-api.yandex.net/v1/disk/resources/download', headers=headers,
+                                   params=params) as resp:
+                async for _ in resp.content.iter_chunked(chunk_size):
+                    inc_progress()
+                if resp.status == 200:
+                    json_data = await resp.json()
+                    download_url = json_data.get('href', '')
+                else:
+                    logger.error(f"Bad download response. Code: {resp.status}")
+                    return DownloadStatus.FAILED, bytes()
 
-        async with session.get(download_url) as resp:
-            if resp.status == 200:
-                content = await resp.read()
-            else:
-                logger.error(f"Failed to download file. Code: {resp.status}")
-                return DownloadStatus.FAILED, bytes()
+            async with session.get(download_url) as resp:
+                if resp.status == 200:
+                    content = await resp.read()
+                else:
+                    logger.error(f"Failed to download file. Code: {resp.status}")
+                    return DownloadStatus.FAILED, bytes()
+        except aiohttp.ClientConnectionError as e:
+            logger.exception(e)
+            return DownloadStatus.FAILED, bytes()
 
         return DownloadStatus.OK, content
 
-    async def size(self, session: aiohttp.ClientSession) -> Tuple[int, int]:
+    async def size(self, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Tuple[int, int]]:
         headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -156,14 +163,18 @@ class YandexDisk(StorageBase):
             'fields': 'total_space,used_space'
         }
 
-        async with session.get('https://cloud-api.yandex.net/v1/disk/', headers=headers,
-                               params=params) as resp:
-            if resp.status == 200:
-                json_data = await resp.json()
-                return json_data['used_space'], json_data['total_space']
-            else:
-                logger.error(f"Bad response. Code: {resp.status}")
-                return 0, 0
+        try:
+            async with session.get('https://cloud-api.yandex.net/v1/disk/', headers=headers,
+                                   params=params) as resp:
+                if resp.status == 200:
+                    json_data = await resp.json()
+                    return json_data['used_space'], json_data['total_space']
+                else:
+                    logger.error(f"Bad response. Code: {resp.status}")
+                    return DownloadStatus.FAILED, (0, 0)
+        except aiohttp.ClientConnectionError as e:
+            logger.exception(e)
+            return DownloadStatus.FAILED, (0, 0)
 
     async def delete(self, filename: str, session: aiohttp.ClientSession) -> DeleteStatus:
         headers = {
@@ -178,13 +189,17 @@ class YandexDisk(StorageBase):
             'force_async': 'true'
         }
 
-        async with session.delete('https://cloud-api.yandex.net/v1/disk/resources', headers=headers,
-                                  params=params) as resp:
-            if resp.status in (202, 204):
-                return DeleteStatus.OK
-            else:
-                logger.error(f"Bad response. Code: {resp.status}")
-                return DeleteStatus.FAILED
+        try:
+            async with session.delete('https://cloud-api.yandex.net/v1/disk/resources', headers=headers,
+                                      params=params) as resp:
+                if resp.status in (202, 204):
+                    return DeleteStatus.OK
+                else:
+                    logger.error(f"Bad response. Code: {resp.status}")
+                    return DeleteStatus.FAILED
+        except aiohttp.ClientConnectionError as e:
+            logger.exception(e)
+            return DeleteStatus.FAILED
 
     async def files(self, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Tuple[File]]:
         headers = {
@@ -211,7 +226,7 @@ class YandexDisk(StorageBase):
                     logger.error(f"Bad response. Code: {resp.status}")
                     return DownloadStatus.FAILED, tuple(files)
 
-        except aiohttp.ClientSession as e:
+        except aiohttp.ClientConnectionError as e:
             logger.exception(e)
             return DownloadStatus.FAILED, tuple(files)
 

@@ -51,6 +51,8 @@ class Parser(argparse.ArgumentParser):
         self._storage_wipe.add_argument("storage_id")
         # LIST
         self._list = subparsers.add_parser("list", help="Show list of files")
+        self._list.add_argument("-s", "--size", action="store_true", help="Show size of files")
+        self._list.add_argument("-c", "--color", action="store_true", help="Show colorized")
 
         # DELETE
         self._delete = subparsers.add_parser("delete", help="Delete file")
@@ -60,6 +62,8 @@ class Parser(argparse.ArgumentParser):
         self._key = subparsers.add_parser("key", help="Key options")
         key_subparsers = self._key.add_subparsers()
         self._key_add = key_subparsers.add_parser("add", help="Add new key")
+        self._key_generate = key_subparsers.add_parser("generate", help="Generate new key")
+
         self._key_list = key_subparsers.add_parser("list", help="List keys")
 
         self._key_add.add_argument("key", help="New key")
@@ -94,5 +98,11 @@ class Parser(argparse.ArgumentParser):
     def set_key_add_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._key_add.set_defaults(func=func)
 
+    def set_key_generate_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self._key_generate.set_defaults(func=func)
+
     def set_key_list_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
         self._key_list.set_defaults(func=func)
+
+    def set_empty_handler(self, func: Callable[[], Coroutine[argparse.Action, None, None]]):
+        self.set_defaults(func=func)

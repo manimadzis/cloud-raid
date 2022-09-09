@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import sys
 
 from loguru import logger
@@ -33,8 +34,31 @@ async def main():
             config.save("config.toml")
 
     cli = CLI(config, parser)
+
+    async def sigint_handler(signal):
+        await cli.close()
+
+        print("\nInterrupted")
+        tasks = asyncio.all_tasks()
+        for task in tasks:
+            task.cancel()
+
+        loop.stop()
+
+    #
+    loop = asyncio.get_event_loop()
+    for signame in ('SIGINT', 'SIGTERM'):
+        loop.add_signal_handler(getattr(signal, signame),
+                                lambda: asyncio.create_task(sigint_handler(signame)))
+
     await cli.init()
-    await cli.start()
+    try:
+        await cli.start()
+    except Exception as e:
+        logger.exception(e)
+        print("Exception occurred")
+    finally:
+        await cli.close()
 
 
 if __name__ == '__main__':

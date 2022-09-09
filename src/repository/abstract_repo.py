@@ -64,4 +64,7 @@ class AbstractRepo(ABC):
         await self._conn.commit()
 
     async def close(self):
-        await self._conn.close()
+        try:
+            await self._conn.close()
+        except Exception:
+            pass

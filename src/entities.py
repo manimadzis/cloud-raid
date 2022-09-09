@@ -10,8 +10,8 @@ class File:
     id: int = 0
     filename: str = ""
     size: int = 0
-    block_count: int = 0
-    uploaded_block_count: int = 0
+    total_blocks: int = 0
+    uploaded_blocks: int = 0
 
     path: str = ""
 
