@@ -226,7 +226,7 @@ class CLI:
     async def _list_handler(self, args: argparse.Action):
         self._vfs = VFS(self._block_repo)
         await self._vfs.load()
-        await asyncio.sleep(2)
+        # await asyncio.sleep(2)
         print(self._vfs.tree())
 
     async def _delete_handler(self, args: argparse.Action):
@@ -365,8 +365,8 @@ class CLI:
             file = await self._block_repo.get_file_by_filename(src)
             file.path = dst
 
-
-            print(f"File {file.filename} consist of {file.total_blocks} {self._size2human(file.size / file.total_blocks)} blocks")
+            print(
+                f"File {file.filename} consist of {file.total_blocks} {self._size2human(file.size / file.total_blocks)} blocks")
 
             try:
                 download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))
@@ -380,7 +380,6 @@ class CLI:
             exc = download_task.exception()
             if exc:
                 raise exc
-
 
     @staticmethod
     async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]):
@@ -400,7 +399,8 @@ class CLI:
 
             db_file = await self._block_repo.get_file_by_filename(file.filename)
             if db_file.total_blocks != db_file.uploaded_blocks:
-                if not self._yes_or_no(f"File {file.filename} partially loaded ({file.uploaded_blocks}/{file.total_blocks}). Do you want to continue load?[y/n]"):
+                if not self._yes_or_no(
+                        f"File {file.filename} partially loaded ({file.uploaded_blocks}/{file.total_blocks}). Do you want to continue load?[y/n]"):
                     raise exceptions.CancelAction()
 
             upload_task = asyncio.create_task(uploader.upload_file(file))
