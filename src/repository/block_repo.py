@@ -5,7 +5,7 @@ from loguru import logger
 
 import exceptions
 from crypto.aes import Aes
-from entities import Block, File, Key
+from entity import Block, File, Key
 from network.storage_base import StorageBase, StorageType
 from network.storage_creator import StorageCreator
 from repository.abstract_repo import AbstractRepo
@@ -209,6 +209,9 @@ class BlockRepo(AbstractRepo):
                                  'WHERE name = ?', (block.name,))
 
     async def del_file(self, file: File):
+        cur = await self.execute('DELETE FROM blocks '
+                                 'WHERE file_id IN '
+                                 '(SELECT id FROM files WHERE filename = ?)', (file.filename,))
         cur = await self.execute('DELETE FROM files '
                                  'WHERE filename = ?', (file.filename,))
 

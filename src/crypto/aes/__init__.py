@@ -3,12 +3,12 @@ import hashlib
 from Crypto import Random
 from Crypto.Cipher import AES
 
-import entities
+import entity
 from crypto.cipher_base import CipherBase
 
 
 class Aes(CipherBase):
-    def __init__(self, key: entities.Key):
+    def __init__(self, key: entity.Key):
         self._key = key
         self._hashed_key = hashlib.sha256(key.key.encode('ascii')).digest()
 

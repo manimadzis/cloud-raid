@@ -18,7 +18,6 @@ class File:
     # setting
     block_size: int = 0
     duplicate_count: int = 1
-    worker_count: int = 5
 
 
 @dataclass(kw_only=True)

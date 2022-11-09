@@ -6,7 +6,7 @@ from typing import List, Tuple, Iterable
 import aiohttp
 from loguru import logger
 
-import entities
+import entity
 import repository
 from .storage_base import DownloadStatus
 
@@ -25,7 +25,7 @@ class Downloader:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._session.close()
 
-    async def _download_block(self, block: entities.Block) -> Tuple[DownloadStatus, entities.Block]:
+    async def _download_block(self, block: entity.Block) -> Tuple[DownloadStatus, entity.Block]:
         status, data = await block.storage.download(block.name, self._session)
 
         if block.cipher:
@@ -39,7 +39,7 @@ class Downloader:
 
         return status, block
 
-    async def _download_block_by_chunks(self, block: entities.Block) -> Tuple[DownloadStatus, entities.Block]:
+    async def _download_block_by_chunks(self, block: entity.Block) -> Tuple[DownloadStatus, entity.Block]:
         def inc_progress():
             self._progress[block.number][0] += 1
 
@@ -57,18 +57,18 @@ class Downloader:
         return status, block
 
     @staticmethod
-    def _merge_blocks(path: str, blocks: Iterable[entities.Block], temp_dir: str):
+    def _merge_blocks(path: str, blocks: Iterable[entity.Block], temp_dir: str):
         with open(path, "wb") as f:
             for block in blocks:
                 with open(os.path.join(temp_dir, block.name), "rb") as ff:
                     data = ff.read()
                 f.write(data)
 
-    async def count_blocks(self, file: entities.File) -> int:
+    async def count_blocks(self, file: entity.File) -> int:
         blocks = await self._block_repo.get_blocks_by_file(file)
         return len(blocks)
 
-    async def download_file(self, file: entities.File, temp_dir: str = "") -> None:
+    async def download_file(self, file: entity.File, temp_dir: str = "") -> None:
         tasks: List[asyncio.Task] = []
         blocks = await self._block_repo.get_blocks_by_file(file)
         logger.info(blocks)

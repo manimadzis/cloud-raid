@@ -3,7 +3,7 @@ import os
 import uuid
 from typing import Tuple, Iterable
 
-import entities
+import entity
 import exceptions
 from crypto import CipherBase
 from .storage_base import StorageBase
@@ -42,7 +42,7 @@ class Balancer:
 
         return tuple(disks)
 
-    def block_size(self, file: entities.File) -> int:
+    def block_size(self, file: entity.File) -> int:
         if self._block_size:
             return self._block_size
 
@@ -59,7 +59,7 @@ class Balancer:
 
         return block_size
 
-    def fill_block(self, block: entities.Block) -> entities.Block:
+    def fill_block(self, block: entity.Block) -> entity.Block:
         block.storage = self.storages(1)[0]
         block.name = str(uuid.uuid4())
         block.cipher = self._cipher()

@@ -11,7 +11,7 @@ from fs.base import FS
 from fs.info import Info
 from fs.memoryfs import MemoryFS, _DirEntry
 
-from entities import File
+from entity import File
 from repository.block_repo import BlockRepo
 
 

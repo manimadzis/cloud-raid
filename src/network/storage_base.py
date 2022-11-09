@@ -5,7 +5,7 @@ from typing import Union, Tuple, Generator, Any, Iterator, Dict, List, Callable
 
 import aiohttp
 from tqdm.asyncio import tqdm
-import entities
+import entity
 
 
 class StorageType(Enum):
@@ -73,5 +73,5 @@ class StorageBase(ABC):
         pass
 
     @abstractmethod
-    async def files(self, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Tuple[entities.File]]:
+    async def files(self, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Tuple[entity.File]]:
         pass

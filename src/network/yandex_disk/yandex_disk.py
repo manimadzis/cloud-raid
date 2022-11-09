@@ -4,7 +4,7 @@ import aiohttp
 from loguru import logger
 from tqdm.asyncio import tqdm
 
-from entities import File
+from entity import File
 from network.storage_base import StorageBase, DownloadStatus, UploadStatus, StorageType, DeleteStatus
 
 

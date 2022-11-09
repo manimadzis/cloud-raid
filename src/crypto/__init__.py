@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-import entities
+import entity
 
 
 
@@ -15,7 +15,7 @@ class CipherBase(ABC):
         pass
 
     @abstractmethod
-    def key(self) -> entities.Key:
+    def key(self) -> entity.Key:
         pass
 
 

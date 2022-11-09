@@ -9,7 +9,7 @@ import aiosqlite
 from loguru import logger
 from tabulate import tabulate
 
-import entities
+import entity
 import exceptions
 from cli.parser import Parser
 from config import Config
@@ -85,7 +85,7 @@ class CLI:
         self._balancer = Balancer(storages, ciphers=ciphers, min_block_size=self._config.min_block_size,
                                   max_block_size=self._config.max_block_size, block_size=block_size)
 
-        file = entities.File(filename=dst, path=src)
+        file = entity.File(filename=dst, path=src)
 
         print(f"Upload file {repr(src)} like {repr(dst)}\n")
 
@@ -178,7 +178,7 @@ class CLI:
         storage_id = args.storage_id
         worker_count = args.worker_count
 
-        async def worker(queue: asyncio.Queue[entities.Block], session: aiohttp.ClientSession):
+        async def worker(queue: asyncio.Queue[entity.Block], session: aiohttp.ClientSession):
             while not queue.empty():
                 block = await queue.get()
                 await self._delete_block(block, session)
@@ -203,7 +203,7 @@ class CLI:
 
             queue = asyncio.Queue()
             for file in files:
-                queue.put_nowait(entities.Block(name=file.filename, storage=storage))
+                queue.put_nowait(entity.Block(name=file.filename, storage=storage))
 
             tasks = []
             for _ in range(worker_count):
@@ -219,7 +219,7 @@ class CLI:
         tasks = []
         async with aiohttp.ClientSession() as session:
             for filename in filenames:
-                block = entities.Block(storage=storage, name=filename)
+                block = entity.Block(storage=storage, name=filename)
                 tasks.append(asyncio.create_task(self._delete_block(block, session)))
             await asyncio.gather(*tasks)
 
@@ -256,7 +256,7 @@ class CLI:
         key = args.key
 
         try:
-            await self._block_repo.add_key(entities.Key(key=key))
+            await self._block_repo.add_key(entity.Key(key=key))
             await self._block_repo.commit()
         except aiosqlite.IntegrityError:
             print("This key already exists")
@@ -265,7 +265,7 @@ class CLI:
 
     async def _key_generate_handler(self, args: argparse.Action):
         key = uuid.uuid4().hex
-        await self._block_repo.add_key(entities.Key(key=key))
+        await self._block_repo.add_key(entity.Key(key=key))
         await self._block_repo.commit()
         print("Key successfully added")
 
@@ -281,15 +281,15 @@ class CLI:
 
     # OTHER
 
-    async def _delete_block(self, block: entities.Block, session: aiohttp.ClientSession):
+    async def _delete_block(self, block: entity.Block, session: aiohttp.ClientSession):
         status = await block.storage.delete(block.name, session)
         if status == DeleteStatus.OK:
             print(f"Block {block.name} on storage #{block.storage.id} deleted")
-            await self._block_repo.del_block(entities.Block(name=block.name, storage=block.storage))
+            await self._block_repo.del_block(entity.Block(name=block.name, storage=block.storage))
         else:
             print(f"Failed to delete block {block.name}")
 
-    async def _delete_file(self, file: entities.File):
+    async def _delete_file(self, file: entity.File):
         blocks = await self._block_repo.get_blocks_by_file(file)
 
         async with aiohttp.ClientSession() as session:
@@ -387,7 +387,7 @@ class CLI:
             yield func()
             await asyncio.sleep(period)
 
-    async def _upload_file(self, file: entities.File) -> None:
+    async def _upload_file(self, file: entity.File) -> None:
         async with Uploader(self._balancer, self._block_repo) as uploader:
             file.block_size = self._balancer.block_size(file)
             file.total_blocks = uploader.count_blocks(file)
@@ -397,10 +397,15 @@ class CLI:
             if not self._yes_or_no(question):
                 raise exceptions.CancelAction()
 
-            db_file = await self._block_repo.get_file_by_filename(file.filename)
-            if db_file.total_blocks != db_file.uploaded_blocks:
+            partially_loaded = True
+            try:
+                db_file = await self._block_repo.get_file_by_filename(file.filename)
+            except UnknownFile as e:
+                partially_loaded = False
+
+            if partially_loaded and db_file.total_blocks != db_file.uploaded_blocks:
                 if not self._yes_or_no(
-                        f"File {file.filename} partially loaded ({file.uploaded_blocks}/{file.total_blocks}). Do you want to continue load?[y/n]"):
+                        f"File {file.filename} partially loaded ({db_file.uploaded_blocks}/{db_file.total_blocks}). Do you want to continue load?[y/n]"):
                     raise exceptions.CancelAction()
 
             upload_task = asyncio.create_task(uploader.upload_file(file))
@@ -408,9 +413,15 @@ class CLI:
                 self._multi_progress_bar(progress)
 
             print("\n" * len(uploader.progress))
-            exc = upload_task.exception()
-            if exc:
-                raise exc
+            try:
+                unloaded_blocks = upload_task.result()
+            except Exception as e:
+                logger.exception(e)
+
+            if unloaded_blocks:
+                print("Failed to load following blocks:")
+                for status, block in unloaded_blocks:
+                    print(f"block_number={block.number} status={status}")
 
     def _parse(self):
         return self._parser.parse_args()
