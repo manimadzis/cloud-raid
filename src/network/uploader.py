@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import math
 import os
 from typing import Iterator, Tuple, List, Sequence
@@ -14,6 +15,14 @@ from .balancer import Balancer
 from .storage_base import UploadStatus
 
 
+@dataclasses.dataclass(kw_only=True)
+class BlockProgress:
+    done: int
+    total: int
+    block_number: int
+    duplicate_number: int
+
+
 class Uploader:
     def __init__(self,
                  balancer: Balancer,
@@ -24,7 +33,7 @@ class Uploader:
         self._balancer = balancer
         self._blocks_repo = blocks_repo
         self._session = None
-        self._progress: List[List[int]] = []
+        self._progress: List[BlockProgress] = []
         self._chunk_size = chunk_size
         self._repeat_count = repeat_count  # number of upload attempts
         self._parallel_num = parallel_num  # number of simultaneous uploads
@@ -42,11 +51,11 @@ class Uploader:
 
         return status, block
 
-    def _block_by_chunk(self, block: entity.Block):
+    def _block_by_chunk(self, block: entity.Block) -> Iterator[bytes]:
         offset = 0
         while offset < len(block.data) - self._chunk_size:
-            self._progress[block.number][0] += 1
             yield block.data[offset:offset + self._chunk_size]
+            self._progress[block.number * block.file.duplicate_count + block.duplicate_number].done += 1
             offset += self._chunk_size
 
     async def _upload_block_by_chunks(self, block: entity.Block, ) -> Tuple[UploadStatus, entity.Block]:
@@ -167,14 +176,27 @@ class Uploader:
         await self._blocks_repo.commit()
         return totally_failed
 
-    def _init_progress(self, file):
-        total = math.ceil(file.block_size / self._chunk_size)
-        self._progress = [[0, total] for _ in range(math.ceil(file.size / file.block_size))]
-        self._progress[-1][1] = math.ceil((file.size % file.block_size) / self._chunk_size)
+    def _init_progress(self, file: entity.File):
+        """
+        Reset progress
+        """
+
+        block_count = math.ceil(file.size / file.block_size) * file.duplicate_count
+        total_chuck = math.ceil(file.block_size / self._chunk_size)
+        self._progress = [BlockProgress(done=0,
+                                        total=total_chuck,
+                                        block_number=i // file.duplicate_count,
+                                        duplicate_number=i % file.duplicate_count)
+                          for i in range(block_count)]
+
+        for i in range(file.duplicate_count):
+            self._progress[-i - 1].total = math.ceil((file.size % file.block_size) / self._chunk_size)
 
     async def upload_file(self, file: entity.File) -> List[Tuple[UploadStatus, entity.Block]]:
         """
         Return list of files not uploaded to storage (if empty then everything is ok)
+
+        Raise FileAlreadyExists if file.filename already exists in repository
         """
 
         uploaded_blocks = []

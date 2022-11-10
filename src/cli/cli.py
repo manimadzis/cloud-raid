@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import os
 import uuid
-from typing import List, Callable, Any
+from typing import List, Callable, Any, Optional
 
 import aiohttp
 import aiosqlite
@@ -19,7 +19,7 @@ from network.balancer import Balancer
 from network.downloader import Downloader
 from network.storage_base import StorageType, DeleteStatus, DownloadStatus
 from network.storage_creator import StorageCreator
-from network.uploader import Uploader
+from network.uploader import Uploader, BlockProgress
 from repository.block_repo import BlockRepo
 from vfs import VFS
 
@@ -96,7 +96,7 @@ class CLI:
             logger.exception(e)
             return
         except FileAlreadyExists as e:
-            print("File with this name already exists")
+            print(f"File with name {file.filename} already exists")
             logger.exception(e)
             return
         except CancelAction as e:
@@ -320,7 +320,14 @@ class CLI:
         return input().startswith("y")
 
     @staticmethod
-    def _progress_bar(iteration, total, prefix='', suffix='', decimals=1, length=60, fill='█', end="\n"):
+    def _progress_bar(iteration: int,
+                      total: int,
+                      prefix: str = '',
+                      suffix: str = '',
+                      decimals: int = 1,
+                      length: int = 60,
+                      fill: str = '█',
+                      end: str = "\n"):
         """
         Call in a loop to create terminal progress bar
         @params:
@@ -339,26 +346,32 @@ class CLI:
         print(f'\r{prefix} |{bar}| {percent}% {suffix}', end=end)
 
     @staticmethod
-    def _multi_progress_bar(progress: List[List[int]]):
+    def _multi_progress_bar(progress: List[BlockProgress]) -> int:
         if not progress:
-            return
+            return 0
 
-        i = 0
-        for _, (done, _) in enumerate(reversed(progress)):
-            if done != 0:
-                break
-            i += 1
+        indexed_progress = [block_progress
+                            for block_progress in progress
+                            if block_progress.done != 0]
 
-        last_started = len(progress) - i - 1
-        if last_started == -1:
-            return
+        logger.info([f"{p.done}/{p.total}" for p in indexed_progress])
 
-        for i, (done, total) in enumerate(progress[:last_started], start=1):
-            CLI._progress_bar(done, total=total, prefix=str(i))
+        for block_progress in indexed_progress:
+            CLI._progress_bar(block_progress.done, block_progress.total,
+                              prefix=f"b {block_progress.block_number} d {block_progress.duplicate_number}:")
 
-        if last_started > 0:
-            done, total = progress[last_started]
-            CLI._progress_bar(done, total=total, prefix=str(last_started + 1), end=("\033[A" * last_started))
+        CLI._progress_bar(len([0 for block_progress in progress
+                               if block_progress.done == block_progress.total]), len(progress), prefix="Total:")
+
+        return len(indexed_progress) + 1
+
+    @staticmethod
+    def _go_up(count: int = 1):
+        print(end=("\033[A" * count))
+
+    @staticmethod
+    def _go_down(count: int = 1):
+        print(end=("\033[B" * count))
 
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
         async with Downloader(self._block_repo) as downloader:
@@ -366,7 +379,7 @@ class CLI:
             file.path = dst
 
             print(
-                f"File {file.filename} consist of {file.total_blocks} {self._size2human(file.size / file.total_blocks)} blocks")
+                    f"File {file.filename} consist of {file.total_blocks} {self._size2human(file.size / file.total_blocks)} blocks")
 
             try:
                 download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))
@@ -382,7 +395,7 @@ class CLI:
                 raise exc
 
     @staticmethod
-    async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]):
+    async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]) -> Optional[Any]:
         while not task.done():
             yield func()
             await asyncio.sleep(period)
@@ -409,14 +422,13 @@ class CLI:
                     raise exceptions.CancelAction()
 
             upload_task = asyncio.create_task(uploader.upload_file(file))
+            bar_size = 0
             async for progress in self._poll_task(0.5, upload_task, lambda: uploader.progress):
-                self._multi_progress_bar(progress)
+                bar_size = self._multi_progress_bar(progress)
+                self._go_up(bar_size)
+            self._go_down(bar_size + 1)
 
-            print("\n" * len(uploader.progress))
-            try:
-                unloaded_blocks = upload_task.result()
-            except Exception as e:
-                logger.exception(e)
+            unloaded_blocks = upload_task.result()
 
             if unloaded_blocks:
                 print("Failed to load following blocks:")
@@ -432,3 +444,6 @@ class CLI:
 
     async def close(self):
         await self._block_repo.close()
+
+    def interrupt(self):
+        print("\nInterrupted")

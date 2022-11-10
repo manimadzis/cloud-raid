@@ -7,13 +7,13 @@ from dataclasses import dataclass, field
 
 @dataclass(kw_only=True)
 class File:
-    id: int = 0
-    filename: str = ""
+    id: int = 0 # unique id in db
+    filename: str = "" # path to file to upload
     size: int = 0
     total_blocks: int = 0
     uploaded_blocks: int = 0
 
-    path: str = ""
+    path: str = "" # path of file in raid
 
     # setting
     block_size: int = 0
@@ -35,6 +35,8 @@ class Block:
     name: str = ""
     number: int = 0
     size: int = 0
+
+    duplicate_number: int = 0
 
     file: File = None
     storage: network.storage_base.StorageBase = None

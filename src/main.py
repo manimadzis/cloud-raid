@@ -37,8 +37,8 @@ async def main():
 
     async def sigint_handler(signal):
         await cli.close()
+        cli.interrupt()
 
-        print("\nInterrupted")
         tasks = asyncio.all_tasks()
         for task in tasks:
             task.cancel()
