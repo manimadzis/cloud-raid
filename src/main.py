@@ -13,27 +13,11 @@ async def main():
     args = parser.parse_args()
 
     logger.remove()
-    logger.add(args.log, rotation="20 MB", enqueue=True)
+    logger.add(args.log_path, rotation="20 MB", enqueue=True)
     if args.debug:
         logger.add(sys.stderr, colorize=True, enqueue=True, format="{time} | {level} | {message}")
 
-    config: Config = Config()
-
-    if args.config_path:
-        try:
-            config = Config.load(args.config_path)
-        except Exception as e:
-            logger.exception(e)
-            print("Invalid path to config")
-    else:
-        try:
-            config = Config.load("config.toml")
-        except Exception as e:
-            logger.exception(e)
-            config = Config()
-            config.save("config.toml")
-
-    cli = CLI(config, parser)
+    cli = CLI(parser)
 
     async def sigint_handler(signal):
         await cli.close()

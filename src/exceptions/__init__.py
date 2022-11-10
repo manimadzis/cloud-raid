@@ -21,3 +21,8 @@ class KeyAlreadyExists(Error):
 class UnknownStorage(Error):
     pass
 
+class NoCipher(Error):
+    pass
+
+class UploadFailed(Error):
+    pass

@@ -1,7 +1,6 @@
 import asyncio
 import dataclasses
 import math
-import os
 from typing import Iterator, Tuple, List, Sequence
 
 import aiohttp
@@ -75,54 +74,42 @@ class Uploader:
 
         return status, block
 
-    @staticmethod
-    def _block_generator(file: entity.File) -> Iterator[entity.Block]:
+    def _block_generator(self, file: entity.File) -> Iterator[entity.Block]:
         """
-        Iterate over file by blocks with duplicates
+        Iterate over file by blocks without duplicates
         """
 
         with open(file.path, "rb") as f:
             data = f.read(file.block_size)
             number = 0
             while data:
-                for _ in range(file.duplicate_count):
-                    yield entity.Block(file=file, number=number, data=data, size=len(data))
+                blocks = [entity.Block(file=file, number=number, data=data, size=len(data))
+                          for _ in range(file.duplicate_count)]
+                self._balancer.fill_blocks(blocks)
+                yield from blocks
                 data = f.read(file.block_size)
                 number += 1
 
-    @staticmethod
-    def _block_generator_and_filter(file: entity.File, uploaded_blocks: Sequence[entity.Block]) -> Iterator[
-        entity.Block]:
+    def _block_generator_and_filter(self,
+                                    file: entity.File,
+                                    uploaded_blocks: Sequence[entity.Block]) -> Iterator[entity.Block]:
         """
         Iterate over file by blocks with duplicates and filter already uploaded
         """
-        block_generator = Uploader._block_generator(file)
+        block_generator = Uploader._block_generator(self, file)
         for block in block_generator:
             if block.number not in [block_.number for block_ in uploaded_blocks]:
                 yield block
 
-    @staticmethod
-    def count_blocks(file: entity.File) -> int:
-        """
-        Count blocks of file (get size and divide by block size)
-        """
-        size = os.path.getsize(file.path)
-        block_count = size // file.block_size
-        if block_count * file.block_size != size:
-            block_count += 1
-
-        return block_count
-
-    async def _upload_blocks(self, blocks: Iterator[entity.Block]) -> List[
-        Tuple[UploadStatus, entity.Block]]:
+    async def _upload_blocks(self, blocks: Iterator[entity.Block]) -> List[Tuple[UploadStatus, entity.Block]]:
         """
         Upload parallel_num blocks simultaneously
 
         Return list of blocks not uploaded to storage with its upload status
         """
 
-        upload_tasks = []
-        db_tasks = []
+        upload_tasks: List[asyncio.Task] = []
+        db_tasks: List[asyncio.Task] = []
         failed = []
         first = True
         totally_failed = []
@@ -132,13 +119,12 @@ class Uploader:
             try:
                 for _ in range(self._parallel_num - len(upload_tasks)):
                     block = next(blocks)
-                    self._balancer.fill_block(block)
                     upload_tasks.append(asyncio.create_task(self._upload_block_by_chunks(block)))
             except StopIteration:
                 pass
 
-            logger.info(upload_tasks)
-            logger.info(db_tasks)
+            logger.trace(f"Upload tasks: {upload_tasks}")
+            logger.trace(f"DB tasks: {db_tasks}")
 
             if upload_tasks:
                 done, pending = await asyncio.wait(upload_tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -157,8 +143,8 @@ class Uploader:
                 db_tasks.append(asyncio.create_task(self._blocks_repo.commit()))
 
             if db_tasks:
-                await asyncio.wait(db_tasks, return_when=asyncio.FIRST_COMPLETED)
-                db_tasks = [task for task in db_tasks if not task.done()]
+                await asyncio.wait(db_tasks, return_when=asyncio.ALL_COMPLETED)
+                db_tasks = []
 
         if len(failed) != 0:
             failed = [asyncio.create_task(coro) for coro in failed]
@@ -227,7 +213,7 @@ class Uploader:
         return unloaded_blocks
 
     @property
-    def progress(self) -> List[List[int]]:
+    def progress(self) -> List[BlockProgress]:
         return self._progress
 
     async def __aenter__(self) -> "Uploader":

@@ -38,7 +38,7 @@ class DeleteStatus(Enum):
     FAILED = 'Failed'
 
 
-@dataclass(order=True, kw_only=True)
+@dataclass(kw_only=True)
 class StorageBase(ABC):
     id: int = 0
     token: str = field(default="", compare=False, repr=False)
@@ -47,6 +47,9 @@ class StorageBase(ABC):
     total_space: int = field(default=0, repr=False)
 
     type: StorageType = None
+
+    def __lt__(self, other):
+        return self.used_space/self.total_space < other.used_space/other.total_space
 
     @abstractmethod
     async def upload(self, filename: str, data: bytes, session: aiohttp.ClientSession) -> UploadStatus:

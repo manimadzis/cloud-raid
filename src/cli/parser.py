@@ -6,10 +6,10 @@ class Parser(argparse.ArgumentParser):
     def __init__(self):
         super(Parser, self).__init__()
 
-        self.add_argument('--config', dest='config_path', default="", help="Path to config file")
+        self.add_argument('-d', '--db', dest='db_path', default="db.sqlite", help="Path to config file")
         self.add_argument('--debug', action="store_true", help="Enable debug output")
-        self.add_argument('--log', help="Path to log file", default="log.txt")
-        self.add_argument('-wc', '--worker-count', help="Count of simultaneous workers (connections)", default=5,
+        self.add_argument('--log', help="Path to log file", default="log.txt", dest="log_path")
+        self.add_argument('-w', '--worker-count', help="Count of simultaneous workers (connections)", default=5,
                           type=int, dest="worker_count")
 
         subparsers = self.add_subparsers(parser_class=argparse.ArgumentParser)
@@ -19,9 +19,9 @@ class Parser(argparse.ArgumentParser):
         self._upload.add_argument("src", help="Path to file")
         self._upload.add_argument("dst", help="Filename in system", nargs='?', default="")
         self._upload.add_argument("-b", "--block-size", help="Size of block in bytes", type=int,
-                                  default=0, dest="block_size")
+                                  default=20 * 2 ** 20, dest="block_size")
 
-        self._upload.add_argument("-c", "--cipher", action="store_true")
+        self._upload.add_argument("-e", "--encrypt", action="store_true", dest="need_encrypt")
 
         # DOWNLOAD
         self._download = subparsers.add_parser("download", help="Download file")

@@ -12,7 +12,6 @@ from tabulate import tabulate
 import entity
 import exceptions
 from cli.parser import Parser
-from config import Config
 from crypto.aes import Aes
 from exceptions import *
 from network.balancer import Balancer
@@ -25,16 +24,15 @@ from vfs import VFS
 
 
 class CLI:
-    def __init__(self, config: Config, parser: Parser):
+    def __init__(self, parser: Parser):
         self._balancer: Balancer = None
         self._block_repo: BlockRepo = None
         self._vfs: VFS = None
         self._parser = parser
-        self._config = config
         self._init_parser()
 
     async def init(self):
-        self._block_repo = await BlockRepo(self._config.db_path)
+        self._block_repo = await BlockRepo(self._parser.parse_args().db_path)
 
     @staticmethod
     def _replace_line(s: str):
@@ -71,19 +69,20 @@ class CLI:
             print(f"Cannot open file {src}")
             return
 
-        if args.cipher:
+        if args.need_encrypt:
             keys = await self._block_repo.get_keys()
             if not keys:
-                print("No keys. Add one by 'key add' or don't use '-c' parameter")
+                print("No keys. Add one by 'key add' or don't use '-e' parameter")
                 return
 
             ciphers = [Aes(key) for key in keys]
         else:
-            ciphers = []
+            ciphers = None
 
         storages = await self._block_repo.get_storages()
-        self._balancer = Balancer(storages, ciphers=ciphers, min_block_size=self._config.min_block_size,
-                                  max_block_size=self._config.max_block_size, block_size=block_size)
+        self._balancer = Balancer(storages,
+                                  ciphers=ciphers,
+                                  block_size=block_size)
 
         file = entity.File(filename=dst, path=src)
 
@@ -92,7 +91,7 @@ class CLI:
         try:
             await self._upload_file(file)
         except NoStorage as e:
-            print("No disks. Add one by 'storage add' command")
+            print("No storage. Add one by 'storage add' command")
             logger.exception(e)
             return
         except FileAlreadyExists as e:
@@ -417,9 +416,7 @@ class CLI:
         If user don't confirm operation it will raise CancelAction
         """
         async with Uploader(self._balancer, self._block_repo) as uploader:
-            file.block_size = self._balancer.block_size(file)
-            file.total_blocks = uploader.count_blocks(file)
-            file.size = os.path.getsize(file.path)
+            self._balancer.fill_file(file)
 
             print(f"File {file.filename} split into {file.total_blocks} {self._size2human(file.block_size)} blocks.")
             if not self._yes_or_no(f"Are you sure you want to load it?"):
@@ -444,11 +441,12 @@ class CLI:
             self._go_down(bar_size + 1)
 
             unloaded_blocks = upload_task.result()
-
             if unloaded_blocks:
                 print("Failed to load following blocks:")
                 for status, block in unloaded_blocks:
                     print(f"block_number={block.number} status={status}")
+                raise exceptions.UploadFailed()
+
 
     def _parse(self):
         return self._parser.parse_args()

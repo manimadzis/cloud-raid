@@ -18,6 +18,7 @@ class File:
     # setting
     block_size: int = 0
     duplicate_count: int = 1
+    need_encrypt: bool = False
 
 
 @dataclass(kw_only=True)

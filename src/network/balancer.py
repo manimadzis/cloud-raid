@@ -1,7 +1,9 @@
 import heapq
+import math
 import os
+import random
 import uuid
-from typing import Tuple, Iterable
+from typing import Tuple, Iterable, Collection, Optional
 
 import entity
 import exceptions
@@ -10,57 +12,63 @@ from .storage_base import StorageBase
 
 
 class Balancer:
-    def __init__(self, storages: Iterable[StorageBase],
-                 ciphers: Iterable[CipherBase] = tuple(),
-                 min_block_size=1 * 2 ** 20,
-                 max_block_size=5 * 2 ** 20,
-                 block_size=None,
-                 ):
-        self._min_block_size = min_block_size
-        self._max_block_size = max_block_size
-        self._block_size = block_size
-        self._ciphers = tuple(ciphers) or None
-        self._storages = tuple(storages)
-        self._queue = list(storages)
+    """
+    Balancer assign storage to block
+    Using heap sorted by used space in storage
+    """
 
-        heapq.heapify(self._queue)
-
-    def _cipher(self) -> CipherBase:
-        if self._ciphers:
-            return self._ciphers[0]
-
-    def storages(self, count: int) -> Tuple[StorageBase]:
-        if not self._storages:
+    def __init__(self,
+                 storages: Iterable[StorageBase],
+                 ciphers: Optional[Iterable[CipherBase]] = None,
+                 block_size: int = 5 * 2 ** 20):
+        if not storages:
             raise exceptions.NoStorage()
 
-        if count > len(self._queue):
-            count = len(self._queue)
-        disks = [heapq.heappop(self._queue) for _ in range(count)]
+        self._block_size = block_size
+        self._storage_queue = list(storages)
+        self._ciphers = list(ciphers) if ciphers else None
+
+        heapq.heapify(self._storage_queue)
+
+    def _cipher(self) -> CipherBase:
+        if not self._cipher:
+            raise exceptions.NoCipher()
+
+        return random.choice(self._ciphers)
+
+    def _storages(self, count: int) -> Tuple[StorageBase]:
+        disks = [heapq.heappop(self._storage_queue) for _ in range(count)]
 
         for disk in disks:
-            heapq.heappush(self._queue, disk)
+            heapq.heappush(self._storage_queue, disk)
 
         return tuple(disks)
 
-    def block_size(self, file: entity.File) -> int:
-        if self._block_size:
-            return self._block_size
+    @staticmethod
+    def _total_blocks(file: entity.File) -> int:
+        """
+        Count blocks of file (get size and divide by block size)
+        """
+        size = os.path.getsize(file.path)
+        return math.ceil(size / file.block_size)
 
-        file_size = os.path.getsize(file.path)
+    def fill_file(self, file: entity.File) -> None:
+        """
+        Calculate block_size, total_blocks and size by getting file size
+        """
+        file.block_size = self._block_size
+        file.size = os.path.getsize(file.path)
+        file.total_blocks = self._total_blocks(file)
 
-        if file_size < self._min_block_size:
-            block_size = self._min_block_size
-        elif file_size < (self._max_block_size + self._min_block_size) / 2:
-            block_size = file_size
-        elif file_size < self._max_block_size:
-            block_size = file_size // 2 + 1
-        else:
-            block_size = self._max_block_size
+    def fill_blocks(self, blocks: Collection[entity.Block]) -> None:
+        """
+        Assign unique storage and name to every block. Also add cipher if block.file.need_encrypt
 
-        return block_size
-
-    def fill_block(self, block: entity.Block) -> entity.Block:
-        block.storage = self.storages(1)[0]
-        block.name = str(uuid.uuid4())
-        block.cipher = self._cipher()
-        return block
+        It suppose every block in list belongs to the same file
+        Because duplicates of block have to store in different storages
+        """
+        for block, storage in zip(blocks, self._storages(len(blocks))):
+            block.storage = storage
+            block.name = str(uuid.uuid4())
+            if block.file.need_encrypt:
+                block.cipher = self._cipher()
