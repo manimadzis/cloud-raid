@@ -316,8 +316,12 @@ class CLI:
 
     @staticmethod
     def _yes_or_no(s: str) -> bool:
-        print(s)
-        return input().startswith("y")
+        print("{} [Y/N]".format(s))
+        line = input()
+        while not line:
+            line = input()
+
+        return line.lower().startswith("y")
 
     @staticmethod
     def _progress_bar(iteration: int,
@@ -338,7 +342,7 @@ class CLI:
             decimals    - Optional  : positive number of decimals in percent complete (Int)
             length      - Optional  : character length of bar (Int)
             fill        - Optional  : bar fill character (Str)
-            printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
+            end    - Optional  : end character (e.g. "\r", "\r\n") (Str)
         """
         percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
         filledLength = int(length * iteration // total)
@@ -396,18 +400,29 @@ class CLI:
 
     @staticmethod
     async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]) -> Optional[Any]:
+        """
+        Execute some function while given task not done every period seconds
+
+        Yield func result
+        """
+
         while not task.done():
             yield func()
             await asyncio.sleep(period)
 
     async def _upload_file(self, file: entity.File) -> None:
+        """
+        Upload file
+
+        If user don't confirm operation it will raise CancelAction
+        """
         async with Uploader(self._balancer, self._block_repo) as uploader:
             file.block_size = self._balancer.block_size(file)
             file.total_blocks = uploader.count_blocks(file)
             file.size = os.path.getsize(file.path)
 
-            question = f"File {file.filename} split into {file.total_blocks} {self._size2human(file.block_size)} blocks.\nAre you sure you want to load it?[y/n]"
-            if not self._yes_or_no(question):
+            print(f"File {file.filename} split into {file.total_blocks} {self._size2human(file.block_size)} blocks.")
+            if not self._yes_or_no(f"Are you sure you want to load it?"):
                 raise exceptions.CancelAction()
 
             partially_loaded = True
@@ -417,8 +432,8 @@ class CLI:
                 partially_loaded = False
 
             if partially_loaded and db_file.total_blocks != db_file.uploaded_blocks:
-                if not self._yes_or_no(
-                        f"File {file.filename} partially loaded ({db_file.uploaded_blocks}/{db_file.total_blocks}). Do you want to continue load?[y/n]"):
+                print(f"File {file.filename} partially loaded ({db_file.uploaded_blocks}/{db_file.total_blocks}).")
+                if not self._yes_or_no(f"Do you want to continue load?"):
                     raise exceptions.CancelAction()
 
             upload_task = asyncio.create_task(uploader.upload_file(file))
