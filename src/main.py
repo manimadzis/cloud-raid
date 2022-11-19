@@ -5,7 +5,6 @@ import sys
 from loguru import logger
 
 from cli import CLI, Parser
-from config import Config
 
 
 async def main():

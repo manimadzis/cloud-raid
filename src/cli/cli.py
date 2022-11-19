@@ -123,7 +123,7 @@ class CLI:
         try:
             await self._download_file(src, dst, temp_dir)
         except Exception as e:
-            print(e)
+            logger.exception(e)
             return
         print(f"\nFile {src} successfully downloaded to {dst}")
 
@@ -381,8 +381,8 @@ class CLI:
             file = await self._block_repo.get_file_by_filename(src)
             file.path = dst
 
-            print(
-                    f"File {file.filename} consist of {file.total_blocks} {self._size2human(file.size / file.total_blocks)} blocks")
+            block_size = self._size2human(file.size // file.total_blocks)
+            print(f"File {file.filename} consist of {file.total_blocks} {block_size} blocks")
 
             try:
                 download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))

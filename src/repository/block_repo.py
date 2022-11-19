@@ -1,8 +1,9 @@
-from typing import Tuple, Generator
+from typing import Tuple, Generator, List
 
 import aiosqlite
 from loguru import logger
 
+import entity
 import exceptions
 from crypto.aes import Aes
 from entity import Block, File, Key
@@ -17,13 +18,13 @@ class BlockRepo(AbstractRepo):
 
 
     async def _create_tables(self) -> None:
-        await self.execute("""CREATE TABLE IF NOT EXISTS storages(
+        await self.execute("""CREATE TABLE IF NOT EXISTS storage(
         id INTEGER PRIMARY KEY,
         token STRING UNIQUE NOT NULL,
         type STRING NOT NULL);
         """)
 
-        await self.execute("""CREATE TABLE IF NOT EXISTS files(
+        await self.execute("""CREATE TABLE IF NOT EXISTS file(
         id INTEGER PRIMARY KEY,
         filename STRING NOT NULL UNIQUE,
         size INT NOT NULL,
@@ -31,12 +32,12 @@ class BlockRepo(AbstractRepo):
         total_blocks INTEGER NOT NULL);
         """)
 
-        await self.execute("""CREATE TABLE IF NOT EXISTS keys(
+        await self.execute("""CREATE TABLE IF NOT EXISTS key(
         id INTEGER PRIMARY KEY,
         key STRING NOT NULL UNIQUE);
         """)
 
-        await self.execute("""CREATE TABLE IF NOT EXISTS blocks(
+        await self.execute("""CREATE TABLE IF NOT EXISTS block(
         id INTEGER PRIMARY KEY,
         number INTEGER NOT NULL,
         name STRING NOT NULL,
@@ -44,9 +45,9 @@ class BlockRepo(AbstractRepo):
         storage_id INTEGER NOT NULL,
         file_id INTEGER NOT NULL,
         key_id INTEGER,
-        FOREIGN KEY (storage_id) REFERENCES storages(id),
-        FOREIGN KEY (key_id) REFERENCES keys(id),
-        FOREIGN KEY (file_id) REFERENCES files(id));
+        FOREIGN KEY (storage_id) REFERENCES storage(id),
+        FOREIGN KEY (key_id) REFERENCES key(id),
+        FOREIGN KEY (file_id) REFERENCES file(id));
         """)
 
     async def add_block(self, block: Block) -> None:
@@ -55,7 +56,7 @@ class BlockRepo(AbstractRepo):
 
         if block.cipher:
             key_id = block.cipher.key().id
-        cur = await self.add_row('blocks', {
+        cur = await self.add_row('block', {
             'key_id': key_id,
             'storage_id': block.storage.id,
             'file_id': block.file.id,
@@ -65,19 +66,19 @@ class BlockRepo(AbstractRepo):
         })
         block.id = cur.lastrowid
         logger.info(block.file)
-        cur = await self.execute('UPDATE files '
+        cur = await self.execute('UPDATE file '
                                  'SET uploaded_blocks = uploaded_blocks + 1 '
                                  'WHERE id = ?', (block.file.id,))
 
 
     async def add_storage(self, disk: StorageBase) -> None:
-        await self.add_row('storages', {
+        await self.add_row('storage', {
             'token': disk.token,
             'type': str(disk.type)
         })
 
     async def add_file(self, file: File) -> None:
-        cur = await self.add_row('files', {
+        cur = await self.add_row('file', {
             'size': file.size,
             'filename': file.filename,
             'uploaded_blocks': file.uploaded_blocks,
@@ -88,7 +89,7 @@ class BlockRepo(AbstractRepo):
     async def get_files(self) -> Tuple[File]:
         files = []
         cur = await self.execute('SELECT id, filename, size '
-                                 'FROM files')
+                                 'FROM file')
         for row in await cur.fetchall():
             files.append(File(filename=row['filename'],
                               id=row['id'],
@@ -97,7 +98,7 @@ class BlockRepo(AbstractRepo):
 
     async def get_storages(self) -> Tuple[StorageBase]:
         cur = await self.execute('SELECT id, token, type '
-                                 'FROM storages')
+                                 'FROM storage')
 
         disks = []
         async for row in cur:
@@ -110,7 +111,7 @@ class BlockRepo(AbstractRepo):
 
     async def get_token(self, disk: StorageBase) -> StorageBase:
         cur = await self.execute('SELECT token '
-                                 'FROM storages '
+                                 'FROM storage '
                                  'WHERE id = ?', (disk.id,))
         try:
             disk.token = (await cur.fetchone())['token']
@@ -121,7 +122,7 @@ class BlockRepo(AbstractRepo):
 
     async def get_file_by_id(self, file: File) -> File:
         cur = await self.execute('SELECT filename, size '
-                                 'FROM files '
+                                 'FROM file '
                                  'WHERE id = ?', (file.id,))
         row = await cur.fetchone()
         file.filename = row['filename']
@@ -130,7 +131,7 @@ class BlockRepo(AbstractRepo):
 
     async def get_file_by_filename(self, filename: str) -> File:
         cur = await self.execute('SELECT id, size, uploaded_blocks, total_blocks '
-                                 'FROM files '
+                                 'FROM file '
                                  'WHERE filename = ?', (filename,))
         row = await cur.fetchone()
         if not row:
@@ -145,12 +146,6 @@ class BlockRepo(AbstractRepo):
         return file
 
     async def get_blocks_by_file(self, file: File) -> Tuple[Block]:
-        """
-
-
-        :param file:
-        :return:
-        """
         query = """
         SELECT
             b.id id,
@@ -162,9 +157,9 @@ class BlockRepo(AbstractRepo):
             key_id,
             storage_id
         FROM
-            blocks b
-            JOIN storages s ON b.storage_id = s.id
-            LEFT JOIN keys k ON b.key_id = k.id
+            block b
+            JOIN storage s ON b.storage_id = s.id
+            LEFT JOIN key k ON b.key_id = k.id
         WHERE
             b.file_id = ?
         ORDER BY number
@@ -190,7 +185,7 @@ class BlockRepo(AbstractRepo):
 
     async def get_storage_by_id(self, id_: int) -> StorageBase:
         cur = await self.execute('SELECT id, token, type '
-                                 'FROM storages '
+                                 'FROM storage '
                                  'WHERE id = ?', (id_,))
 
         row = await cur.fetchone()
@@ -205,27 +200,71 @@ class BlockRepo(AbstractRepo):
         return storage
 
     async def del_block(self, block: Block):
-        cur = await self.execute('DELETE FROM blocks '
+        cur = await self.execute('DELETE FROM block '
                                  'WHERE name = ?', (block.name,))
 
     async def del_file(self, file: File):
-        cur = await self.execute('DELETE FROM blocks '
+        cur = await self.execute('DELETE FROM block '
                                  'WHERE file_id IN '
-                                 '(SELECT id FROM files WHERE filename = ?)', (file.filename,))
-        cur = await self.execute('DELETE FROM files '
+                                 '(SELECT id FROM file WHERE filename = ?)', (file.filename,))
+        cur = await self.execute('DELETE FROM file '
                                  'WHERE filename = ?', (file.filename,))
 
     async def add_key(self, key: Key) -> None:
-        cur = await self.add_row('keys', {
+        cur = await self.add_row('key', {
             'key': key.key
         })
         key.id = cur.lastrowid
 
     async def get_keys(self) -> Tuple[Key]:
         cur = await self.execute('SELECT id, key '
-                                 'FROM keys')
+                                 'FROM key')
         keys = []
         async for row in cur:
             keys.append(Key(id=row['id'],
                             key=str(row['key'])))
         return tuple(keys)
+
+    async def get_blocks_grouped_by_number(self, file: File) -> Tuple[List[Block]]:
+        query = """
+        SELECT
+            b.id id,
+            number,
+            name,
+            type,
+            size,
+            token,
+            "key",
+            key_id,
+            storage_id
+        FROM
+            block b
+            JOIN storage s ON b.storage_id = s.id
+            LEFT JOIN key k ON b.key_id = k.id
+        WHERE
+            b.file_id = ?
+        ORDER BY number
+        """
+
+        cur = await self.execute(query, (file.id,))
+        blocks = []
+        async for row in cur:
+            type_ = StorageType.from_str(row['type'])
+            storage = StorageCreator.create(type_)
+            storage.token = row['token']
+            key = Key(id=row['key_id'], key=str(row['key']))
+            cipher = Aes(key)
+            blocks.append(Block(number=row['number'],
+                                name=row['name'],
+                                id=row['id'],
+                                storage=storage,
+                                cipher=cipher,
+                                size=row['size'],
+                                file=file
+                                ))
+        max_number = max(block.number for block in blocks)
+        grouped_blocks = [[] for _ in range(max_number + 1)]
+        for block in blocks:
+            grouped_blocks[block.number].append(block)
+
+        return tuple(grouped_blocks)

@@ -21,6 +21,7 @@ class Parser(argparse.ArgumentParser):
         self._upload.add_argument("-b", "--block-size", help="Size of block in bytes", type=int,
                                   default=20 * 2 ** 20, dest="block_size")
 
+
         self._upload.add_argument("-e", "--encrypt", action="store_true", dest="need_encrypt")
 
         # DOWNLOAD

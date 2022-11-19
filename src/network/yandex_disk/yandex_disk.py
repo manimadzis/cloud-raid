@@ -127,30 +127,34 @@ class YandexDisk(StorageBase):
         params = {
             'path': filename
         }
-
+        data = bytes()
         try:
             async with session.get('https://cloud-api.yandex.net/v1/disk/resources/download', headers=headers,
                                    params=params) as resp:
-                async for _ in resp.content.iter_chunked(chunk_size):
-                    inc_progress()
                 if resp.status == 200:
+                    logger.info(await resp.text())
                     json_data = await resp.json()
                     download_url = json_data.get('href', '')
                 else:
                     logger.error(f"Bad download response. Code: {resp.status}")
                     return DownloadStatus.FAILED, bytes()
 
+            chunk_count = 0
             async with session.get(download_url) as resp:
-                if resp.status == 200:
-                    content = await resp.read()
-                else:
+                async for chunk in resp.content.iter_chunked(chunk_size):
+                    data += chunk
+                    if len(data) // chunk_size != chunk_count:
+                        chunk_count += 1
+                        inc_progress()
+                    logger.info(chunk)
+                if resp.status != 200:
                     logger.error(f"Failed to download file. Code: {resp.status}")
-                    return DownloadStatus.FAILED, bytes()
+                    return DownloadStatus.FAILED, data
         except aiohttp.ClientConnectionError as e:
             logger.exception(e)
-            return DownloadStatus.FAILED, bytes()
+            return DownloadStatus.FAILED, data
 
-        return DownloadStatus.OK, content
+        return DownloadStatus.OK, data
 
     async def size(self, session: aiohttp.ClientSession) -> Tuple[DownloadStatus, Tuple[int, int]]:
         headers = {
