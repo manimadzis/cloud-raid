@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import hashlib
 import math
 from typing import Iterator, Tuple, List, Sequence
 
@@ -10,6 +11,7 @@ from tqdm.asyncio import tqdm
 import entity
 import exceptions
 import repository
+import utils
 from .balancer import Balancer
 from .storage_base import UploadStatus
 
@@ -101,6 +103,8 @@ class Uploader:
             if block.number not in [block_.number for block_ in uploaded_blocks]:
                 yield block
 
+
+
     async def _upload_blocks(self, blocks: Iterator[entity.Block]) -> List[Tuple[UploadStatus, entity.Block]]:
         """
         Upload parallel_num blocks simultaneously
@@ -184,7 +188,7 @@ class Uploader:
 
         Raise FileAlreadyExists if file.filename already exists in repository
         """
-
+        file.checksum = utils.sha1_checksum(file.path)
         uploaded_blocks = []
         try:
             db_file = await self._blocks_repo.get_file_by_filename(file.filename)

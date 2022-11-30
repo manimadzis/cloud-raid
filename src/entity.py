@@ -3,17 +3,16 @@ from copy import copy
 from dataclasses import dataclass, field
 
 
-
-
 @dataclass(kw_only=True)
 class File:
-    id: int = 0 # unique id in db
-    filename: str = "" # path to file to upload
+    id: int = 0  # unique id in db
+    filename: str = ""  # path to file to upload
     size: int = 0
     total_blocks: int = 0
     uploaded_blocks: int = 0
+    checksum: str = ""
 
-    path: str = "" # path of file in raid
+    path: str = ""  # path of file in raid
 
     # setting
     block_size: int = 0
@@ -30,6 +29,7 @@ class Key:
 import network.storage_base
 import crypto
 
+
 @dataclass(kw_only=True)
 class Block:
     id: int = 0
@@ -44,6 +44,7 @@ class Block:
     cipher: crypto.CipherBase = None
 
     data: bytes = field(default=None, repr=False)
+
     def copy(self):
         return copy(self)
 

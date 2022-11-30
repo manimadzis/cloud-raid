@@ -132,7 +132,6 @@ class YandexDisk(StorageBase):
             async with session.get('https://cloud-api.yandex.net/v1/disk/resources/download', headers=headers,
                                    params=params) as resp:
                 if resp.status == 200:
-                    logger.info(await resp.text())
                     json_data = await resp.json()
                     download_url = json_data.get('href', '')
                 else:

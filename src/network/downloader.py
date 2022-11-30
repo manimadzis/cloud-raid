@@ -1,15 +1,28 @@
 import asyncio
 import math
 import os
-from typing import List, Tuple, Iterable, Sequence, Optional
+from typing import List, Tuple, Iterable, Sequence
 
 import aiohttp
 from loguru import logger
 
 import entity
 import repository
+import utils
 from repository import BlockProgress
 from .storage_base import DownloadStatus
+
+
+class DownloaderError(Exception):
+    pass
+
+
+class ChecksumNoEqual(DownloaderError):
+    pass
+
+
+class BlockDownloadFailed(DownloaderError):
+    pass
 
 
 class Downloader:
@@ -82,17 +95,17 @@ class Downloader:
                                   total=math.ceil(block.size / self._chunk_size),
                                   block_number=block.number))
 
-
-    async def _download_block_by_blocks(self,
-                                        blocks: Sequence[entity.Block]) \
-            -> Tuple[Tuple[Optional[DownloadStatus], entity.Block]]:
-        history: List[List[Optional[DownloadStatus], entity.Block]] = [[None, block] for block in blocks]
-        for i, (_, block) in enumerate(history):
-            status = await self._download_block_by_chunks(block)
-            history[i][0] = status
+    async def _download_block_by_group(self,
+                                       blocks: Sequence[entity.Block]) \
+            -> Tuple[Tuple[DownloadStatus, entity.Block]]:
+        history: List[Tuple[DownloadStatus, entity.Block]] = []
+        for block in blocks:
+            status, data = await self._download_block_by_chunks(block)
+            block.data = data
+            history.append((status, block))
             if status == DownloadStatus.OK:
                 break
-        return tuple(tuple(x) for x in history)
+        return tuple(history)
 
     async def download_file(self, file: entity.File, temp_dir: str = "") -> None:
         tasks: List[asyncio.Task] = []
@@ -107,7 +120,7 @@ class Downloader:
             for _ in range(self._parallel_num - len(tasks)):
                 if index >= len(blocks):
                     break
-                tasks.append(asyncio.create_task(self._download_block_by_blocks(blocks[index])))
+                tasks.append(asyncio.create_task(self._download_block_by_group(blocks[index])))
                 index += 1
             logger.info(tasks)
 
@@ -116,19 +129,27 @@ class Downloader:
             tasks = list(pending)
             for task in done_tasks:
                 history = task.result()
-
-                for status, block in history:
-                    if status == DownloadStatus.OK:
-                        blocks_with_data[block.number] = block
-                        block.save(temp_dir)
-                        blocks_count += 1
-                        break
-                    else:
-                        logger.info(f"Cannot load block: {block}")
+                status, block = history[-1]
+                if status != DownloadStatus.OK:
+                    raise BlockDownloadFailed
                 else:
-                    logger.info(f"All block's copies unavailable: {history}")
+                    blocks_with_data[block.number] = block
+                    blocks_count += 1
+                    block.save(temp_dir)
+
+                for status, block in history[:-1]:
+                    logger.error(f"Cannot load block: {block}: status:{status}")
+
+        if not all(blocks_with_data):
+            raise BlockDownloadFailed
 
         self._merge_blocks(file.path, blocks_with_data, temp_dir)
+        if not self._check_hash(file):
+            raise ChecksumNoEqual
+
+    @staticmethod
+    def _check_hash(file: entity.File):
+        return utils.sha1_checksum(file.path) == file.checksum
 
     @property
     def progress(self):

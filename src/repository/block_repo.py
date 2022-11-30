@@ -29,7 +29,8 @@ class BlockRepo(AbstractRepo):
         filename STRING NOT NULL UNIQUE,
         size INT NOT NULL,
         uploaded_blocks INTEGER NOT NULL,
-        total_blocks INTEGER NOT NULL);
+        total_blocks INTEGER NOT NULL,
+        checksum STRING NOT NULL);
         """)
 
         await self.execute("""CREATE TABLE IF NOT EXISTS key(
@@ -83,6 +84,7 @@ class BlockRepo(AbstractRepo):
             'filename': file.filename,
             'uploaded_blocks': file.uploaded_blocks,
             'total_blocks': file.total_blocks,
+            'checksum': file.checksum,
         })
         file.id = cur.lastrowid
 
@@ -120,17 +122,8 @@ class BlockRepo(AbstractRepo):
 
         return disk
 
-    async def get_file_by_id(self, file: File) -> File:
-        cur = await self.execute('SELECT filename, size '
-                                 'FROM file '
-                                 'WHERE id = ?', (file.id,))
-        row = await cur.fetchone()
-        file.filename = row['filename']
-        file.size = row['size']
-        return file
-
     async def get_file_by_filename(self, filename: str) -> File:
-        cur = await self.execute('SELECT id, size, uploaded_blocks, total_blocks '
+        cur = await self.execute('SELECT * '
                                  'FROM file '
                                  'WHERE filename = ?', (filename,))
         row = await cur.fetchone()
@@ -143,6 +136,7 @@ class BlockRepo(AbstractRepo):
         file.uploaded_blocks = row['uploaded_blocks']
         file.total_blocks = row['total_blocks']
         file.filename = filename
+        file.checksum = row['checksum']
         return file
 
     async def get_blocks_by_file(self, file: File) -> Tuple[Block]:
