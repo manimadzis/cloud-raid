@@ -11,18 +11,7 @@ import repository
 import utils
 from network.block_progress import BlockProgress
 from .storage_base import DownloadStatus
-
-
-class DownloaderError(Exception):
-    pass
-
-
-class ChecksumNoEqual(DownloaderError):
-    pass
-
-
-class BlockDownloadFailed(DownloaderError):
-    pass
+from exceptions import *
 
 
 class Downloader:
@@ -30,7 +19,7 @@ class Downloader:
                  block_repo: repository.BlockRepo,
                  chunk_size: int = 64 * 2 ** 10,
                  parallel_num: int = 1):
-        self._block_repo = block_repo
+        self._block_repo = block_repo 
         self._session = None
         self._progress: List[BlockProgress] = []
         self._chunk_size = chunk_size
@@ -85,10 +74,6 @@ class Downloader:
                 f.write(data)
 
     def _init_progress(self, grouped_blocks: Sequence[Sequence[entity.Block]]):
-        """
-        Reset progress
-        """
-
         self._progress = []
         for blocks in grouped_blocks:
             block = blocks[0]

@@ -1,6 +1,18 @@
-class Error(Exception):
-    def __init__(self, *args, **kwargs):
-        pass
+class ErrorBase(Exception):
+    pass
+
+
+class DownloaderErrorBase(ErrorBase):
+    pass
+
+
+class ChecksumNoEqual(DownloaderError):
+    pass
+
+
+class BlockDownloadFailed(DownloaderError):
+    pass
+
 
 
 class NoStorage(Error):
