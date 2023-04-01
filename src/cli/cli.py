@@ -15,10 +15,11 @@ from cli.parser import Parser
 from crypto.aes import Aes
 from exceptions import *
 from network.balancer import Balancer
-from network.downloader import Downloader
+from network.block_progress import BlockProgress
+from network.downloader import Downloader, ChecksumNoEqual
 from network.storage_base import StorageType, DeleteStatus, DownloadStatus
 from network.storage_creator import StorageCreator
-from network.uploader import Uploader, BlockProgress
+from network.uploader import Uploader
 from repository.block_repo import BlockRepo
 from vfs import VFS
 
@@ -122,7 +123,11 @@ class CLI:
         print(f"Start downloading file {repr(src)} to {repr(dst)}")
         try:
             await self._download_file(src, dst, temp_dir)
+        except ChecksumNoEqual as e:
+            logger.exception(e)
+            print(f"Checksums not equal")
         except Exception as e:
+            self._fatal_error()
             logger.exception(e)
             return
         print(f"\nFile {src} successfully downloaded to {dst}")
@@ -183,8 +188,8 @@ class CLI:
                 await self._delete_block(block, session)
                 queue.task_done()
 
-        if self._yes_or_no("Are you sure you want to wipe ENTIRELY storage? [y/n]"):
-            if not self._yes_or_no("Are you REALLY want to WIPE ENTIRELY storage? [y/n]"):
+        if self._yes_or_no("Are you sure you want to wipe ENTIRELY storage?"):
+            if not self._yes_or_no("Are you REALLY want to WIPE ENTIRELY storage?"):
                 return
 
         try:
@@ -283,7 +288,7 @@ class CLI:
     async def _delete_block(self, block: entity.Block, session: aiohttp.ClientSession):
         status = await block.storage.delete(block.name, session)
         if status == DeleteStatus.OK:
-            print(f"Block {block.name} on storage #{block.storage.id} deleted")
+            print(f"Block {block.name} on storage #{block.storage.id} is deleted")
             await self._block_repo.del_block(entity.Block(name=block.name, storage=block.storage))
         else:
             print(f"Failed to delete block {block.name}")
@@ -377,6 +382,14 @@ class CLI:
         print(end=("\033[B" * count))
 
     async def _download_file(self, src: str, dst: str, temp_dir: str) -> None:
+        """
+        Download file by name in system
+
+        :param src: Source file path
+        :param dst: Destination file path
+        :param temp_dir: Path to directory for blocks
+        :return:
+        """
         async with Downloader(self._block_repo) as downloader:
             file = await self._block_repo.get_file_by_filename(src)
             file.path = dst
@@ -384,18 +397,15 @@ class CLI:
             block_size = self._size2human(file.size // file.total_blocks)
             print(f"File {file.filename} consist of {file.total_blocks} {block_size} blocks")
 
-            try:
-                download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))
-                logger.info("Create download task")
-                async for progress in self._poll_task(0.5, download_task, lambda: downloader.progress):
-                    self._multi_progress_bar(progress)
-            except Exception as e:
-                logger.exception(e)
-                return
+            download_task = asyncio.create_task(downloader.download_file(file, temp_dir=temp_dir))
+            logger.info("Create download task")
+            bar_size = 0
+            async for progress in self._poll_task(0.5, download_task, lambda: downloader.progress):
+                bar_size = self._multi_progress_bar(progress)
+                self._go_up(bar_size)
+            self._go_down(bar_size + 1)
 
-            exc = download_task.exception()
-            if exc:
-                raise exc
+            download_task.result()
 
     @staticmethod
     async def _poll_task(period: float, task: asyncio.Task, func: Callable[[], Any]) -> Optional[Any]:
@@ -447,9 +457,12 @@ class CLI:
                     print(f"block_number={block.number} status={status}")
                 raise exceptions.UploadFailed()
 
-
     def _parse(self):
         return self._parser.parse_args()
+
+    @staticmethod
+    def _fatal_error():
+        print("Fatal error occurred. Check log file")
 
     async def start(self):
         args = self._parse()

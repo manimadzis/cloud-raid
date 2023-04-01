@@ -12,7 +12,7 @@ async def main():
     args = parser.parse_args()
 
     logger.remove()
-    logger.add(args.log_path, rotation="20 MB", enqueue=True)
+    logger.add(args.log_path, rotation="20 MB", enqueue=True,level="INFO")
     if args.debug:
         logger.add(sys.stderr, colorize=True, enqueue=True, format="{time} | {level} | {message}")
 

@@ -145,7 +145,7 @@ class YandexDisk(StorageBase):
                     if len(data) // chunk_size != chunk_count:
                         chunk_count += 1
                         inc_progress()
-                    logger.info(chunk)
+                    logger.trace(chunk)
                 if resp.status != 200:
                     logger.error(f"Failed to download file. Code: {resp.status}")
                     return DownloadStatus.FAILED, data
