@@ -14,16 +14,19 @@ from .storage_base import DownloadStatus
 from exceptions import *
 
 
+class DownloaderConfig:
+    chunc_size: int = 64 * 2 ** 10
+    parallel_num: int = 1
+
 class Downloader:
     def __init__(self,
                  block_repo: repository.BlockRepo,
-                 chunk_size: int = 64 * 2 ** 10,
-                 parallel_num: int = 1):
+                 config: DownloaderConfig):
         self._block_repo = block_repo 
         self._session = None
         self._progress: List[BlockProgress] = []
-        self._chunk_size = chunk_size
-        self._parallel_num = parallel_num
+        self._chunk_size = config.chunk_size
+        self._parallel_num = config.parallel_num
 
     async def __aenter__(self):
         self._session = aiohttp.ClientSession()

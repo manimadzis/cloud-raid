@@ -23,22 +23,31 @@ class BlockProgress:
     duplicate_number: int
 
 
+@dataclasses.dataclass(kw_only=True)
+class UploaderConfig:
+    chunk_size: int = 64 * 2**10
+    repeat_count: int = 3
+    parallel_num: int = 5
+
+
 class Uploader:
-    def __init__(self,
-                 balancer: Balancer,
-                 blocks_repo: repository.BlockRepo,
-                 chunk_size: int = 64 * 2 ** 10,
-                 repeat_count: int = 3,
-                 parallel_num: int = 5):
+    def __init__(
+        self,
+        balancer: Balancer,
+        blocks_repo: repository.BlockRepo,
+        config: UploaderConfig,
+    ):
         self._balancer = balancer
         self._blocks_repo = blocks_repo
         self._session = None
         self._progress: List[BlockProgress] = []
-        self._chunk_size = chunk_size
-        self._repeat_count = repeat_count  # number of upload attempts
-        self._parallel_num = parallel_num  # number of simultaneous uploads
+        self._chunk_size = config.chunk_size
+        self._repeat_count = config.repeat_count  # number of upload attempts
+        self._parallel_num = config.parallel_num  # number of simultaneous uploads
 
-    async def _upload_block(self, block: entity.Block) -> Tuple[UploadStatus, entity.Block]:
+    async def _upload_block(
+        self, block: entity.Block
+    ) -> Tuple[UploadStatus, entity.Block]:
         if block.cipher:
             block.data = block.cipher.encrypt(block.data)
 
@@ -54,18 +63,25 @@ class Uploader:
     def _block_by_chunk(self, block: entity.Block) -> Iterator[bytes]:
         offset = 0
         while offset < len(block.data) - self._chunk_size:
-            yield block.data[offset:offset + self._chunk_size]
-            self._progress[block.number * block.file.duplicate_count + block.duplicate_number].done += 1
+            yield block.data[offset : offset + self._chunk_size]
+            self._progress[
+                block.number * block.file.duplicate_count + block.duplicate_number
+            ].done += 1
             offset += self._chunk_size
 
-    async def _upload_block_by_chunks(self, block: entity.Block, ) -> Tuple[UploadStatus, entity.Block]:
+    async def _upload_block_by_chunks(
+        self,
+        block: entity.Block,
+    ) -> Tuple[UploadStatus, entity.Block]:
         if block.cipher:
             block.data = block.cipher.encrypt(block.data)
 
         data = tqdm(self._block_by_chunk(block), disable=True)
 
         for _ in range(self._repeat_count):
-            status = await block.storage.upload_by_chunks(block.name, data, self._session)
+            status = await block.storage.upload_by_chunks(
+                block.name, data, self._session
+            )
 
             if status == UploadStatus.OK:
                 logger.info(f"Upload block: {block}")
@@ -84,16 +100,18 @@ class Uploader:
             data = f.read(file.block_size)
             number = 0
             while data:
-                blocks = [entity.Block(file=file, number=number, data=data, size=len(data))
-                          for _ in range(file.duplicate_count)]
+                blocks = [
+                    entity.Block(file=file, number=number, data=data, size=len(data))
+                    for _ in range(file.duplicate_count)
+                ]
                 self._balancer.fill_blocks(blocks)
                 yield from blocks
                 data = f.read(file.block_size)
                 number += 1
 
-    def _block_generator_and_filter(self,
-                                    file: entity.File,
-                                    uploaded_blocks: Sequence[entity.Block]) -> Iterator[entity.Block]:
+    def _block_generator_and_filter(
+        self, file: entity.File, uploaded_blocks: Sequence[entity.Block]
+    ) -> Iterator[entity.Block]:
         """
         Iterate over file by blocks with duplicates and filter already uploaded
         """
@@ -102,9 +120,9 @@ class Uploader:
             if block.number not in [block_.number for block_ in uploaded_blocks]:
                 yield block
 
-
-
-    async def _upload_blocks(self, blocks: Iterator[entity.Block]) -> List[Tuple[UploadStatus, entity.Block]]:
+    async def _upload_blocks(
+        self, blocks: Iterator[entity.Block]
+    ) -> List[Tuple[UploadStatus, entity.Block]]:
         """
         Upload parallel_num blocks simultaneously
 
@@ -122,7 +140,9 @@ class Uploader:
             try:
                 for _ in range(self._parallel_num - len(upload_tasks)):
                     block = next(blocks)
-                    upload_tasks.append(asyncio.create_task(self._upload_block_by_chunks(block)))
+                    upload_tasks.append(
+                        asyncio.create_task(self._upload_block_by_chunks(block))
+                    )
             except StopIteration:
                 pass
 
@@ -130,7 +150,9 @@ class Uploader:
             logger.trace(f"DB tasks: {db_tasks}")
 
             if upload_tasks:
-                done, pending = await asyncio.wait(upload_tasks, return_when=asyncio.FIRST_COMPLETED)
+                done, pending = await asyncio.wait(
+                    upload_tasks, return_when=asyncio.FIRST_COMPLETED
+                )
 
                 upload_tasks = list(pending)
                 done_tasks: List[asyncio.Task] = list(done)
@@ -139,7 +161,9 @@ class Uploader:
                     status, block = task.result()
 
                     if status == UploadStatus.OK:
-                        db_tasks.append(asyncio.create_task(self._blocks_repo.add_block(block)))
+                        db_tasks.append(
+                            asyncio.create_task(self._blocks_repo.add_block(block))
+                        )
                     else:
                         failed.append(self._upload_block_by_chunks(block))
                         logger.error(f"Cannot load block {block}")
@@ -157,7 +181,9 @@ class Uploader:
             for task in done:
                 status, block = task.result()
                 if status == UploadStatus.OK:
-                    db_tasks.append(asyncio.create_task(self._blocks_repo.add_block(block)))
+                    db_tasks.append(
+                        asyncio.create_task(self._blocks_repo.add_block(block))
+                    )
                 else:
                     totally_failed.append((status, block))
         if db_tasks:
@@ -172,16 +198,24 @@ class Uploader:
 
         block_count = math.ceil(file.size / file.block_size) * file.duplicate_count
         total_chuck = math.ceil(file.block_size / self._chunk_size)
-        self._progress = [BlockProgress(done=0,
-                                        total=total_chuck,
-                                        block_number=i // file.duplicate_count,
-                                        duplicate_number=i % file.duplicate_count)
-                          for i in range(block_count)]
+        self._progress = [
+            BlockProgress(
+                done=0,
+                total=total_chuck,
+                block_number=i // file.duplicate_count,
+                duplicate_number=i % file.duplicate_count,
+            )
+            for i in range(block_count)
+        ]
 
         for i in range(file.duplicate_count):
-            self._progress[-i - 1].total = math.ceil((file.size % file.block_size) / self._chunk_size)
+            self._progress[-i - 1].total = math.ceil(
+                (file.size % file.block_size) / self._chunk_size
+            )
 
-    async def upload_file(self, file: entity.File) -> List[Tuple[UploadStatus, entity.Block]]:
+    async def upload_file(
+        self, file: entity.File
+    ) -> List[Tuple[UploadStatus, entity.Block]]:
         """
         Return list of files not uploaded to storage (if empty then everything is ok)
 
@@ -209,7 +243,9 @@ class Uploader:
 
         unloaded_blocks = await self._upload_blocks(blocks)
         if unloaded_blocks:
-            logger.error(f"Failed to upload file {file}: Can't upload blocks: {uploaded_blocks}")
+            logger.error(
+                f"Failed to upload file {file}: Can't upload blocks: {uploaded_blocks}"
+            )
 
         logger.info(f"Upload file: {file}")
 
